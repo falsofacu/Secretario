@@ -134,7 +134,7 @@ export function clasificar(ev, reglas) {
     if (r.calendario && r.calendario !== ev.cal) continue;
     if (r.patron) {
       try {
-        if (!new RegExp(r.patron, 'i').test(`${ev.titulo} ${ev.lugar || ''}`)) continue;
+        if (!new RegExp(r.patron, 'i').test(`${ev.titulo} ${ev.lugar || ''}`.trim())) continue;
       } catch {
         continue;
       }

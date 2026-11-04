@@ -1,5 +1,5 @@
 // app.js — la página del Secretario.
-import * as N from './nucleo.js?v=2';
+import * as N from './nucleo.js?v=3';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
