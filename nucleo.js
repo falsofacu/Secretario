@@ -152,7 +152,7 @@ export function prepararEventos(estado, cal) {
       if (e.todoElDia && ini && fin <= ini) fin = sumarDias(ini, 1);
       return { ...e, ...clasificar(e, estado.config.reglas), ini, fin };
     })
-    .filter((e) => e.ini)
+    .filter((e) => e.ini && e.tipo !== 'ignorar')
     .sort((a, b) => a.ini - b.ini);
 }
 

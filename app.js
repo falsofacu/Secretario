@@ -1,5 +1,5 @@
 // app.js — la página del Secretario.
-import * as N from './nucleo.js';
+import * as N from './nucleo.js?v=2';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -829,7 +829,7 @@ function hojaAjustes() {
         <label class="campo"><span>Clave</span><input type="password" name="calClave" value="${esc(c.calendario.clave)}"></label>
       </div></section>
       <section><h3>Cómo leo tu calendario</h3>
-        <label class="campo"><span>Reglas (JSON): la primera que coincide gana. tipo: show · grabacion · evento · feriado · cumple</span><textarea class="json" name="reglas" style="min-height:160px">${esc(JSON.stringify(c.reglas, null, 2))}</textarea></label>
+        <label class="campo"><span>Reglas (JSON): la primera que coincide gana. tipo: show · grabacion · evento · feriado · cumple · ignorar</span><textarea class="json" name="reglas" style="min-height:160px">${esc(JSON.stringify(c.reglas, null, 2))}</textarea></label>
       </section>
       <section><h3>Conexión</h3><div class="tenue">Repo: ${esc(GH.repo)} · llave …${esc(tok.slice(-4))}</div></section>
       <div class="pie"><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn peligro" type="button" data-a="salir">Cerrar sesión</button><button class="btn" type="button" data-a="json">Editar JSON</button></div>
