@@ -1,5 +1,5 @@
 // app.js — la página del Secretario.
-import * as N from './nucleo.js?v=3';
+import * as N from './nucleo.js?v=4';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -26,6 +26,8 @@ const I = {
   reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 1 0 2.3-5.7"/><path d="M4 5v5h5"/></svg>',
   saltar: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5.5v13l9-6.5z"/><rect x="16" y="5" width="2.5" height="14" rx="1"/></svg>',
   ola: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M2 9c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2M2 15c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2.5 2 5 2"/></svg>',
+  lapiz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/></svg>',
+  asa: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg>',
   basura: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
 };
 
@@ -100,7 +102,7 @@ async function cargar(primera = false) {
     S.error = null; S.sinConexion = false;
     cachear();
     render();
-    if (primera) { calendarioEnVivo(); fechasClientes(); }
+    if (primera) { calendarioEnVivo(); fechasClientes(); cargarClima(); }
   } catch (err) {
     if (err.auth) { ls.del('sec.token'); return vistaLogin(err.message); }
     S.sinConexion = true; S.error = err.message;
@@ -194,7 +196,7 @@ function vence(s) {
   const n = N.diasEntre(new Date(), N.parseDia(s));
   if (n < -1) return { txt: `venció hace ${-n} días`, cls: 'rojo' };
   if (n === -1) return { txt: 'venció ayer', cls: 'rojo' };
-  if (n === 0) return { txt: 'hoy', cls: 'ambar' };
+  if (n === 0) return { txt: 'vence hoy', cls: 'naranja' };
   if (n === 1) return { txt: 'mañana', cls: 'ambar' };
   if (n < 7) return { txt: fechaCorta(s), cls: '' };
   return { txt: fechaCorta(s), cls: '' };
@@ -290,6 +292,9 @@ function renderHero(A) {
           <div class="mini-stat"><b>${N.fh(s.necesarias)}</b><span>de trabajo pendiente</span></div>
           <div class="mini-stat"><b>${N.fh(s.cap8)}</b><span>disponibles</span></div>
         </div>
+        ${A.adelantoNecesario > 0.05
+          ? `<span class="chip ${s.ventaja >= A.adelantoNecesario ? 'verde' : 'naranja'}" style="width:fit-content">Adelanto por días libres: ${N.fh(Math.min(s.ventaja, A.adelantoNecesario))} de ${N.fh(A.adelantoNecesario)}</span>`
+          : s.ventaja >= 0.05 ? `<span class="chip verde" style="width:fit-content">+${N.fh(s.ventaja)} adelantadas de la semana que viene${s.adelantadas ? ` · ${s.adelantadas} pieza${s.adelantadas > 1 ? 's' : ''} lista${s.adelantadas > 1 ? 's' : ''}` : ''}</span>` : ''}
         ${A.bloqueadas.length ? `<span class="tenue">${A.bloqueadas.length} esperando material (no cuentan en contra).</span>` : ''}
       </div>
     </div>
@@ -299,6 +304,7 @@ function renderHero(A) {
 const TABS_FIJAS = [
   { id: 'hoy', nombre: 'Hoy' },
   { id: '*areas' },
+  { id: 'calendario', nombre: 'Calendario' },
   { id: 'metas', nombre: 'Metas' },
   { id: 'vida', nombre: 'Vida' },
 ];
@@ -321,6 +327,7 @@ function renderVista(A) {
   if (S.tab === 'hoy') return vistaHoy(A);
   if (S.tab === 'metas') return vistaMetas(A);
   if (S.tab === 'vida') return vistaVida(A);
+  if (S.tab === 'calendario') return vistaCalendario(A);
   if (S.tab === 'plata') return vistaPlata(A);
   const a = A.areas.find((x) => x.id === S.tab);
   if (a) return vistaArea(A, a);
@@ -354,8 +361,10 @@ function filaPieza(p, opts = {}) {
   if (opts.horas != null && opts.horas > 0.01) chips.push(`<span>${N.fh(opts.horas)}</span>`);
   if (p.atrasada && p.etapa !== 'entregado') chips.push(`<span class="chip rojo">de la semana ${semNum(p.semana)}</span>`);
   if (p.bloqueado) chips.push(`<span class="chip ambar">esperando material</span>`);
+  if (p.futura) chips.push(`<span class="chip verde">adelanto · semana ${semNum(p.semana)}</span>`);
+  else if (!p.atrasada && p.etapa !== 'entregado' && !p.bloqueado && S.A && S.A.hoyS === N.diaStr(S.A.dom)) chips.push('<span class="chip naranja">vence hoy</span>');
   const hecha = p.etapa === 'entregado';
-  return `<div class="fila ${hecha ? 'hecha' : ''} ${opts.extra ? 'extra' : ''}">
+  return `<div class="fila ${hecha ? 'hecha' : ''} ${opts.extra ? 'extra' : ''}" data-ctx="pieza" data-id="${esc(p.id)}">
     <button class="chk ${hecha ? 'on' : ''}" data-a="entregar" data-id="${esc(p.id)}" title="${hecha ? 'Entregado' : 'Marcar entregado'}">${hecha ? I.check : ''}</button>
     <div class="txt"><b>${esc(nombrePieza(p))}</b><div class="meta">${chips.join('')}</div></div>
     ${!hecha && !p.bloqueado ? `<button class="etapa-btn" data-a="avanzar" data-id="${esc(p.id)}">→ ${esc(sigEtq)}</button>` : ''}
@@ -378,10 +387,10 @@ function filaTarea(t, opts = {}) {
       <button data-a="sumar" data-id="${esc(t.id)}" data-n="10">+10</button>
       <button data-a="sumar" data-id="${esc(t.id)}" data-n="?">…</button></div>`;
   }
-  return `<div class="fila ${t.hecha ? 'hecha' : ''} ${opts.extra ? 'extra' : ''}">
+  return `<div class="fila ${t.hecha ? 'hecha' : ''} ${opts.extra ? 'extra' : ''}" data-ctx="tarea" data-id="${esc(t.id)}">
     <button class="chk ${t.hecha ? 'on' : ''}" data-a="hecha" data-id="${esc(t.id)}">${t.hecha ? I.check : ''}</button>
     <div class="txt"><b>${esc(t.titulo)}</b><div class="meta">${chips.join('')}</div>${contador}</div>
-    <button class="mini" data-a="editar-tarea" data-id="${esc(t.id)}" title="Editar">${I.puntos}</button>
+    <button class="mini" data-a="menu-tarea" data-id="${esc(t.id)}" title="Opciones">${I.puntos}</button>
   </div>`;
 }
 
@@ -434,17 +443,22 @@ function vistaHoy(A) {
   if (A.vencidas.length) alertas.push(`<div class="fila"><span class="chip rojo">${A.vencidas.length}</span><div class="txt">tareas vencidas</div></div>`);
   for (const p of A.bloqueadas) alertas.push(`<div class="fila"><span class="chip ambar">espera</span><div class="txt">${esc(area(p.area).corto)} · ${esc(nombrePieza(p))} <span class="tenue">sin material</span></div></div>`);
   for (const v of A.vidaProxima) alertas.push(`<div class="fila"><span class="chip">${N.diasEntre(A.ahora, N.parseDia(v.desde))} días</span><div class="txt">${emojiVida(v.tipo)} ${esc(v.titulo)} <span class="tenue">desde el ${fechaCorta(v.desde)}</span></div></div>`);
-  for (const w of A.pronostico.filter((w) => w.nivel === 'en_riesgo' || w.nivel === 'atrasado').slice(0, 3))
-    alertas.push(`<div class="fila"><span class="chip ${w.nivel === 'atrasado' ? 'rojo' : 'ambar'}">sem ${semNum(w.semana)}</span><div class="txt">La semana del ${fechaCorta(N.diaStr(w.lunes))} tiene ${N.fh(w.carga)} de trabajo y ${N.fh(w.cap)} disponibles. Conviene adelantar.</div></div>`);
+  if (A.adelantoFalta > 0.05) alertas.push(`<div class="fila"><span class="chip naranja">adelantar</span><div class="txt">Esta semana tenés que dejar hechas <b>${N.fh(A.adelantoFalta)}</b> de la que viene, por días libres o vacaciones. Ya están en el plan.</div></div>`);
+  for (const w of A.pronostico.filter((w) => w.carga > w.cap + 0.05).slice(0, 3)) {
+    const motivo = w.libres.length ? `${w.libres.length} día${w.libres.length > 1 ? 's' : ''} libre${w.libres.length > 1 ? 's' : ''}` : w.vida.length ? esc(w.vida.join(', ')) : 'poco tiempo';
+    alertas.push(`<div class="fila"><span class="chip ${w.carga > w.capMax ? 'rojo' : 'ambar'}">sem ${semNum(w.semana)}</span><div class="txt">Semana del ${fechaCorta(N.diaStr(w.lunes))} (${motivo}): ${N.fh(w.carga)} de trabajo y ${N.fh(w.cap)} disponibles. Hay que llegar con ${N.fh(w.carga - w.cap)} adelantadas.</div></div>`);
+  }
 
   return `${partes.join('')}
   <div class="grid2">
     <div class="col">
-      ${b ? `<div class="card briefing"><div class="cab"><span class="etiqueta">Tu resumen de hoy</span><span class="tenue">${esc(b.modelo || '')}</span></div>
-        ${b.resumen ? `<p>${esc(b.resumen)}</p>` : ''}
+      <div class="card briefing"><div class="cab"><span class="etiqueta">Tu resumen de hoy</span>
+          <span class="der">${S.regenerando ? '<span class="tenue"><span class="sync guardando"></span>regenerando…</span>' : b ? `<span class="tenue">${esc(b.modelo || '')}${b.generado ? ` · ${horaDe(b.generado)}` : ''}</span>` : ''}
+          <button class="mini regen" data-a="regenerar" title="Regenerar el resumen">${I.refrescar}</button></span></div>
+        ${b ? `${b.resumen ? `<p>${esc(b.resumen)}</p>` : ''}
         ${b.foco?.length ? `<ul>${b.foco.map((f) => `<li>${f.area ? `<b style="color:${area(f.area).color}">${esc(area(f.area).corto)}:</b> ` : ''}${esc(f.texto)}</li>`).join('')}</ul>` : ''}
         ${b.avisos?.length ? `<ul>${b.avisos.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
-        ${b.frase ? `<div class="frase">${esc(b.frase)}</div>` : ''}</div>` : ''}
+        ${b.frase ? `<div class="frase">${esc(b.frase)}</div>` : ''}` : '<div class="vacio">Todavía no hay resumen de hoy. Se genera a las 7:00, o tocá ↻.</div>'}</div>
       <div class="card">
         <div class="cab"><h2>Qué hacer hoy</h2><span class="tenue">${plan.length ? `${N.fh(plan.reduce((s, p) => s + p.horas, 0))} planificadas` : ''}</span></div>
         ${plan.length ? agruparPorArea(plan) : `<div class="vacio">${N.esLaboral(S.estado, A.ahora) ? 'No queda nada planificado para hoy. ¡Bien!' : 'Hoy es día libre. Nada urgente.'}</div>`}
@@ -458,7 +472,7 @@ function vistaHoy(A) {
       <div class="card"><div class="cab"><h2>La semana por área</h2></div>
         <div class="areas-res">${A.areas.map((a) => {
           const pa = A.porArea[a.id];
-          return `<button class="area-res" style="--c:${a.color}" data-a="tab" data-id="${a.id}"><span class="nom">${esc(a.nombre)}</span>${nivelHtml(pa.nivel, true)}<div class="barra"><i style="width:${pct(pa.progreso)}%"></i></div></button>`;
+          return `<div class="area-res" style="--c:${a.color}" data-a="tab" data-id="${a.id}" data-orden="${a.id}" role="button" tabindex="0"><span class="asa" title="Arrastrá para ordenar">${I.asa}</span><span class="nom">${esc(a.nombre)}</span>${nivelHtml(pa.nivel, true)}<div class="barra"><i style="width:${pct(pa.progreso)}%"></i></div></div>`;
         }).join('')}</div></div>
     </div>
   </div>`;
@@ -482,8 +496,11 @@ function vistaArea(A, a) {
     const ps = piezas.filter((p) => p.cuota.id === c.id);
     const actuales = ps.filter((p) => !p.atrasada);
     const ok = actuales.filter((p) => p.etapa === 'entregado').length;
+    const fut = A.futuras.filter((p) => p.cuota.id === c.id);
+    const futOk = fut.filter((p) => p.etapa !== 'pendiente').length;
     return `<div class="cuota"><div class="cuota-tit"><b>${esc(c.nombre)}</b><span class="tenue">${ok} de ${actuales.length} esta semana · ${N.fh(c.horas)} c/u</span></div>
-      <div class="piezas">${ps.map((p) => chipPieza(p, a)).join('') || '<span class="vacio">Pausada esta semana.</span>'}</div></div>`;
+      <div class="piezas">${ps.map((p) => chipPieza(p, a)).join('') || '<span class="vacio">Pausada esta semana.</span>'}</div>
+      ${fut.length ? `<details class="plegable adelantar" ${futOk ? 'open' : ''}><summary>Adelantar semana ${semNum(fut[0].semana)}${futOk ? ` · ${futOk} empezada${futOk > 1 ? 's' : ''}` : ''}</summary><div class="piezas">${fut.map((p) => chipPieza(p, a)).join('')}</div></details>` : ''}</div>`;
   }).join('');
 
   const extra = [];
@@ -493,7 +510,7 @@ function vistaArea(A, a) {
   if (evs.length) extra.push(`<div class="card"><div class="cab"><h2>${a.id === 'agencia' ? 'Próximas grabaciones' : 'En el calendario'}</h2></div>${agenda(groupByDay(evs))}</div>`);
 
   return `<div class="card" style="margin-bottom:14px">
-      <div class="cab"><div><h2 style="font-family:var(--fuente-display);font-weight:400;font-size:26px">${esc(a.nombre)}</h2>${a.nota ? `<div class="tenue">${esc(a.nota)}</div>` : ''}</div>${nivelHtml(pa.nivel)}</div>
+      <div class="cab"><div><h2 style="font-family:var(--fuente-display);font-weight:400;font-size:26px;display:flex;align-items:center;gap:6px">${esc(a.nombre)}<button class="mini" data-a="editar-area" data-id="${a.id}" title="Renombrar">${I.lapiz}</button></h2>${a.nota ? `<div class="tenue">${esc(a.nota)}</div>` : ''}</div>${nivelHtml(pa.nivel)}</div>
       <div class="barra" style="--c:${a.color}"><i style="width:${pct(pa.progreso)}%"></i></div>
       <div class="tenue" style="margin-top:8px">${pa.total ? `${pct(pa.progreso)}% de lo de esta semana · ${N.fh(pa.total - pa.hecho)} pendientes` : 'Nada con fecha para esta semana.'}${pa.bloqueadas ? ` · ${pa.bloqueadas} esperando material` : ''}</div>
     </div>
@@ -526,7 +543,7 @@ function groupByDay(evs) {
 function chipPieza(p, a) {
   const etq = p.bloqueado ? 'esperando material' : p.etapa === 'material' && p.cuota.material ? p.cuota.material : N.NOMBRE_ETAPA[p.etapa];
   const nom = N.cantidadEn(p.cuota, p.lunes) > 1 ? `#${p.n}` : p.cuota.nombre.split(' ')[0];
-  return `<button class="pieza ${p.etapa} ${p.bloqueado ? 'bloq' : ''} ${p.atrasada && p.etapa !== 'entregado' ? 'vieja' : ''}" style="--c:${a.color};--p:${N.PESO[p.etapa]}" data-a="pieza" data-id="${esc(p.id)}">
+  return `<button class="pieza ${p.etapa} ${p.bloqueado ? 'bloq' : ''} ${p.atrasada && p.etapa !== 'entregado' ? 'vieja' : ''} ${p.futura ? 'futura' : ''}" style="--c:${a.color};--p:${N.PESO[p.etapa]}" data-a="pieza" data-ctx="pieza" data-id="${esc(p.id)}">
     <b>${esc(p.titulo || nom)}</b><small>${esc(etq)}${p.atrasada && p.etapa !== 'entregado' ? ` · sem ${semNum(p.semana)}` : ''}</small><span class="nivelpz"></span></button>`;
 }
 
@@ -600,6 +617,64 @@ function vistaMetas(A) {
 }
 
 // ───────────────────────── vista: Vida ─────────────────────────
+// ───────────────────────── vista: Calendario (días libres + vencimientos) ─────────────────────────
+function vistaCalendario(A) {
+  const hoy = new Date();
+  const ref = S.mesCal ? N.parseDia(S.mesCal) : new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const y = ref.getFullYear(), m = ref.getMonth();
+  const ini = N.lunes(new Date(y, m, 1));
+  const fin = N.sumarDias(N.lunes(new Date(y, m + 1, 0)), 6);
+  const tareas = S.estado.tareas.filter((t) => !t.borrado && t.fecha);
+  const pron = new Map(A.pronostico.map((w) => [w.semana, w]));
+  const filas = [];
+  for (let w = new Date(ini); w <= fin; w = N.sumarDias(w, 7)) {
+    const celdas = [];
+    for (let i = 0; i < 7; i++) {
+      const d = N.sumarDias(w, i), s = N.diaStr(d);
+      const libre = N.esLibre(S.estado, s);
+      const laboral = N.esLaboral(S.estado, d);
+      const vida = N.eventosVidaDelDia(S.estado, d);
+      const evs = N.eventosDelDia(A.eventos, d);
+      const vencen = tareas.filter((t) => t.fecha === s);
+      const marcas = [];
+      for (const t of vencen.slice(0, 3)) marcas.push(`<span class="cm vence ${t.hecha ? 'hecha' : ''}" title="${esc(t.titulo)}">${esc(t.titulo)}</span>`);
+      if (vencen.length > 3) marcas.push(`<span class="cm vence">+${vencen.length - 3}</span>`);
+      for (const e of evs.filter((e) => ['show', 'grabacion', 'feriado'].includes(e.tipo)).slice(0, 2))
+        marcas.push(`<span class="cm ${e.tipo}" title="${esc(e.titulo)}">${{ show: '🎤', grabacion: '🎥', feriado: '🏖️' }[e.tipo]} ${esc(e.titulo)}</span>`);
+      const cls = ['dia', d.getMonth() !== m ? 'fuera' : '', s === A.hoyS ? 'hoy' : '', !laboral ? 'finde' : '', libre ? 'libre' : '', vida.length && !libre ? 'vida' : '', s < A.hoyS ? 'pasado' : ''].filter(Boolean).join(' ');
+      celdas.push(`<button class="${cls}" data-a="dia" data-dia="${s}" title="${libre ? 'Día libre' : vida.length ? esc(vida.map((v) => v.titulo).join(', ')) : ''}"><span class="num">${d.getDate()}</span>${libre ? '<span class="tag-libre">libre</span>' : ''}<span class="marcas">${marcas.join('')}</span></button>`);
+    }
+    const pw = pron.get(N.semanaId(w));
+    const falta = pw && pw.carga > pw.cap + 0.05 ? `<span class="sem-aviso" title="Esa semana no te da: tenés que llegar con trabajo adelantado">adelantar ${N.fh(pw.carga - pw.cap)}</span>` : '';
+    filas.push(`<div class="cal-sem">${celdas.join('')}${falta ? `<div class="cal-aviso">${falta}</div>` : ''}</div>`);
+  }
+  const prevMes = N.diaStr(new Date(y, m - 1, 1)), sigMes = N.diaStr(new Date(y, m + 1, 1));
+  const nLibres = Object.values(S.estado.libres || {}).filter((x) => x.off).length;
+  return `<div class="card calendario">
+      <div class="cab"><h2 style="font-family:var(--fuente-display);font-weight:400;font-size:24px;text-transform:capitalize">${MESES[m]} ${y}</h2>
+        <div class="der"><button class="mini" data-a="mes" data-mes="${prevMes}" title="Mes anterior">‹</button><button class="btn chico" data-a="mes" data-mes="">Hoy</button><button class="mini" data-a="mes" data-mes="${sigMes}" title="Mes siguiente">›</button></div></div>
+      <div class="cal-cab">${['lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'].map((d) => `<span>${d}</span>`).join('')}</div>
+      ${filas.join('')}
+      <div class="cal-leyenda"><span><i class="lg libre"></i>día libre</span><span><i class="lg vence"></i>vencimiento</span><span><i class="lg vida"></i>vacaciones / mudanza</span><span>🎤 show</span><span>🎥 grabación</span></div>
+    </div>
+    <div class="grid2" style="margin-top:14px"><div class="col"><div class="card"><h2>Cómo funciona</h2><p class="suave" style="margin:8px 0 0">Tocá un día para marcarlo como <b>libre</b> (no trabajás). Esos días cuentan como 0 horas, y si una semana no te da para sus cuotas, el Secretario calcula cuánto tenés que <b>adelantar</b> antes y lo pone en tu plan. Recién cuando hiciste más que eso, figurás <b>Adelantado</b>.</p>
+      <p class="tenue" style="margin:10px 0 0">${nLibres ? `Tenés ${nLibres} día${nLibres > 1 ? 's' : ''} libre${nLibres > 1 ? 's' : ''} marcado${nLibres > 1 ? 's' : ''}.` : 'Todavía no marcaste días libres.'} Para rangos largos (vacaciones, la mudanza) usá la pestaña <i>Vida</i>.</p></div></div><div class="col">
+      ${A.adelantoFalta > 0.05 ? `<div class="card"><div class="cab"><h2>Para adelantar esta semana</h2><span class="chip naranja">${N.fh(A.adelantoFalta)}</span></div><p class="suave" style="margin:0">Ya está sumado a tu plan de hoy y a las horas pendientes de la semana.</p></div>` : ''}
+    </div></div>`;
+}
+
+function menuDia(s, ancla) {
+  const d = N.parseDia(s);
+  const libre = N.esLibre(S.estado, s);
+  const vencen = S.estado.tareas.filter((t) => !t.borrado && t.fecha === s);
+  abrirMenu(ancla, [
+    { titulo: fechaLarga(d) },
+    { txt: libre ? 'Quitar día libre' : 'Marcar día libre (no trabajo)', on: libre, fn: () => mutar((e) => { e.libres[s] = { off: !libre, u: ahoraMs() }; }, libre ? 'Vuelve a ser día de trabajo' : 'Día libre marcado') },
+    { txt: 'Agregar vencimiento este día…', icono: I.mas, fn: () => hojaTarea(null, S.tab !== 'calendario' ? S.tab : 'gamedev', s) },
+    ...(vencen.length ? ['-', { titulo: 'Vence este día' }, ...vencen.map((t) => ({ txt: `${t.hecha ? '✓ ' : ''}${t.titulo}`, icono: `<i class="pe" style="--p:${t.hecha ? 1 : 0};border-color:${area(t.area).color}"></i>`, fn: () => menuTarea(t.id, ancla) }))] : []),
+  ]);
+}
+
 function vistaVida(A) {
   const evs = S.estado.eventosVida.filter((e) => !e.borrado).sort((a, b) => a.desde.localeCompare(b.desde));
   const max = Math.max(1, ...A.pronostico.map((w) => Math.max(w.carga, w.cap)));
@@ -687,9 +762,9 @@ function hojaPieza(id) {
       <div class="der"><button class="btn" data-a="cerrar">Cerrar</button><button class="btn primario" data-a="guardar-pieza" data-id="${esc(id)}">Guardar</button></div></div>`);
 }
 
-function hojaTarea(t, areaId) {
+function hojaTarea(t, areaId, fecha) {
   const nueva = !t;
-  t = t || { id: N.nuevoId('t'), area: areaId || 'gamedev', titulo: '', hecha: false };
+  t = t || { id: N.nuevoId('t'), area: S.estado.areas.some((a) => a.id === areaId) ? areaId : 'gamedev', titulo: '', fecha: fecha || null, hecha: false };
   abrirHoja(`<h2>${nueva ? 'Nueva tarea' : 'Editar tarea'}</h2>
     <form data-form="editar-tarea" data-id="${esc(t.id)}" data-nueva="${nueva ? 1 : ''}" class="campos" style="margin-top:14px">
       <label class="campo"><span>Qué hay que hacer</span><input type="text" name="titulo" value="${esc(t.titulo)}" required></label>
@@ -818,6 +893,11 @@ function hojaAjustes() {
           <label class="check"><input type="checkbox" name="q:${q.id}:activa" ${q.activa !== false ? 'checked' : ''}> activa</label></div>`).join('')}
         <p class="tenue" style="margin:4px 0 0">Si cambiás la cantidad, aplica desde esta semana; las anteriores quedan como estaban.</p>
       </section>
+      <section><h3>Clima</h3><div class="campos-2">
+        <label class="campo"><span>Ciudad</span><input type="text" name="climaLugar" value="${esc(c.clima?.lugar || 'Montevideo')}"></label>
+        <label class="campo"><span>Latitud</span><input type="number" step="0.01" name="climaLat" value="${esc(c.clima?.lat ?? -34.9)}" style="width:110px"></label>
+        <label class="campo"><span>Longitud</span><input type="number" step="0.01" name="climaLon" value="${esc(c.clima?.lon ?? -56.16)}" style="width:110px"></label>
+      </div><p class="tenue" style="margin:6px 0 0">Cuando te mudes, poné la ciudad nueva (latitud y longitud de Google Maps).</p></section>
       <section><h3>Pomodoro</h3><div class="campos-2">
         <label class="campo"><span>Foco (min)</span><input type="number" name="pFoco" value="${c.pomodoro.foco}" min="5" max="120"></label>
         <label class="campo"><span>Descanso (min)</span><input type="number" name="pDescanso" value="${c.pomodoro.descanso}" min="1" max="60"></label>
@@ -842,6 +922,199 @@ function hojaJson() {
     <textarea class="json" id="json-edit">${esc(JSON.stringify(S.estado, null, 2))}</textarea>
     <div class="pie"><span class="error" id="json-err"></span><div class="der"><button class="btn" data-a="cerrar">Cancelar</button><button class="btn primario" data-a="guardar-json">Guardar</button></div></div>`, true);
 }
+
+// ───────────────────────── menú rápido (tipo clic derecho) ─────────────────────────
+let MENU = null;
+function cerrarMenu() { MENU?.remove(); MENU = null; }
+function abrirMenu(ancla, items) {
+  cerrarMenu();
+  const m = document.createElement('div');
+  m.className = 'menu';
+  m.setAttribute('role', 'menu');
+  const acciones = [];
+  m.innerHTML = items.map((it) => {
+    if (it === '-') return '<div class="menu-sep"></div>';
+    if (it.titulo) return `<div class="menu-tit">${esc(it.titulo)}</div>`;
+    acciones.push(it);
+    return `<button role="menuitem" class="${it.on ? 'on' : ''} ${it.peligro ? 'peligro' : ''}" data-m="${acciones.length - 1}">
+      <span class="ic">${it.icono || ''}</span><span class="tx">${esc(it.txt)}</span>${it.on ? `<span class="ok">${I.check}</span>` : ''}</button>`;
+  }).join('');
+  document.body.append(m);
+  let x, y;
+  if (ancla.clientX != null) { x = ancla.clientX; y = ancla.clientY; }
+  else { const r = ancla.getBoundingClientRect(); x = r.left; y = r.bottom + 4; }
+  const r = m.getBoundingClientRect();
+  if (x + r.width > innerWidth - 8) x = innerWidth - r.width - 8;
+  if (y + r.height > innerHeight - 8) y = Math.max(8, (ancla.clientY ?? ancla.getBoundingClientRect().top) - r.height - 4);
+  m.style.left = `${Math.max(8, x)}px`;
+  m.style.top = `${Math.max(8, y)}px`;
+  m.addEventListener('click', (ev) => {
+    const b = ev.target.closest('[data-m]');
+    if (!b) return;
+    ev.stopPropagation();
+    const it = acciones[Number(b.dataset.m)];
+    cerrarMenu();
+    it.fn();
+  });
+  MENU = m;
+  MENU_Y = scrollY;
+}
+let MENU_Y = 0;
+addEventListener('scroll', () => { if (MENU && Math.abs(scrollY - MENU_Y) > 40) cerrarMenu(); }, { passive: true });
+addEventListener('resize', cerrarMenu);
+
+const puntoEtapa = (e) => `<i class="pe" style="--p:${N.PESO[e]}"></i>`;
+function menuPieza(id, ancla) {
+  const p = buscarPieza(id);
+  if (!p) return;
+  const etapas = p.cuota.simple ? ['pendiente', 'entregado'] : N.ETAPAS.filter((x) => x !== 'revision' || p.cuota.revision !== false);
+  abrirMenu(ancla, [
+    { titulo: `${area(p.area).corto} · ${nombrePieza(p)}${p.futura ? ' (adelanto)' : ''}` },
+    ...etapas.map((e) => ({ txt: e === 'material' && p.cuota.material ? p.cuota.material : N.NOMBRE_ETAPA[e], icono: puntoEtapa(e), on: p.etapa === e, fn: () => setEtapa(id, e) })),
+    '-',
+    { txt: 'Esperando material', on: p.bloqueado, fn: () => setPieza(id, { bloqueado: !p.bloqueado }) },
+    { txt: 'Título, nota, monto…', icono: I.lapiz, fn: () => hojaPieza(id) },
+    { txt: p.descartada ? 'Recuperar' : 'Descartar', icono: I.basura, peligro: !p.descartada, fn: () => { setPieza(id, { descartada: !p.descartada }); toast(p.descartada ? 'Pieza recuperada' : 'Pieza descartada'); } },
+  ]);
+}
+
+function moverTarea(id, fecha, aviso) {
+  mutar((e) => { const x = e.tareas.find((y) => y.id === id); x.fecha = fecha; x.u = ahoraMs(); }, aviso);
+}
+function menuTarea(id, ancla) {
+  const t = S.estado.tareas.find((x) => x.id === id);
+  if (!t) return;
+  const hoy = new Date();
+  const viernes = N.sumarDias(N.lunes(hoy), 4);
+  abrirMenu(ancla, [
+    { titulo: t.titulo.length > 42 ? `${t.titulo.slice(0, 40)}…` : t.titulo },
+    { txt: t.hecha ? 'Desmarcar' : 'Marcar hecha', icono: I.check, fn: () => ACC.hecha({ dataset: { id } }) },
+    '-',
+    { txt: 'Para hoy', fn: () => moverTarea(id, N.diaStr(hoy), 'Para hoy') },
+    { txt: 'Para mañana', fn: () => moverTarea(id, N.diaStr(N.sumarDias(hoy, 1)), 'Para mañana') },
+    ...(viernes > hoy ? [{ txt: 'Para el viernes', fn: () => moverTarea(id, N.diaStr(viernes), 'Para el viernes') }] : []),
+    { txt: 'Sin fecha', on: !t.fecha, fn: () => moverTarea(id, null, 'Sin fecha') },
+    '-',
+    { txt: 'Editar…', icono: I.lapiz, fn: () => hojaTarea(t) },
+    { txt: 'Borrar', icono: I.basura, peligro: true, fn: () => mutar((e) => { const x = e.tareas.find((y) => y.id === id); x.borrado = true; x.u = ahoraMs(); }, 'Tarea borrada') },
+  ]);
+}
+
+function hojaArea(id) {
+  const a = S.estado.areas.find((x) => x.id === id);
+  abrirHoja(`<h2>Renombrar</h2>
+    <form data-form="editar-area" data-id="${esc(id)}" class="campos" style="margin-top:14px">
+      <label class="campo"><span>Nombre</span><input type="text" name="nombre" value="${esc(a.nombre)}" required></label>
+      <div class="campos-2">
+        <label class="campo"><span>Nombre corto (para etiquetas)</span><input type="text" name="corto" value="${esc(a.corto || '')}"></label>
+        <label class="campo"><span>Color</span><input type="color" name="color" value="${esc(a.color)}" style="height:42px;width:80px;padding:4px"></label>
+      </div>
+      <label class="campo"><span>Nota</span><input type="text" name="nota" value="${esc(a.nota || '')}"></label>
+      <div class="pie"><span></span><div class="der"><button class="btn" type="button" data-a="cerrar">Cancelar</button><button class="btn primario" type="submit">Guardar</button></div></div>
+    </form>`);
+}
+
+const horaDe = (iso) => { const d = new Date(iso); return `${N.pad(d.getHours())}:${N.pad(d.getMinutes())}`; };
+
+async function pedirActualizacion() {
+  const r = await GH.leer('datos/pedido.json');
+  await GH.escribir('datos/pedido.json', { pedido: new Date().toISOString(), por: 'página' }, r.sha, 'Página: pedir actualización');
+}
+let tRegen = null;
+async function regenerar() {
+  if (S.regenerando) return toast('Ya está regenerando…');
+  try { await pedirActualizacion(); } catch (e) { return toast(`No pude pedirlo: ${e.message}`); }
+  S.regenerando = Date.now();
+  const antes = S.briefing?.generado;
+  render();
+  toast('Pedido. Tu PC lo genera en unos minutos (si está prendida).');
+  clearInterval(tRegen);
+  tRegen = setInterval(async () => {
+    await cargar();
+    if (S.briefing?.generado !== antes) { clearInterval(tRegen); S.regenerando = null; render(); toast('Resumen nuevo listo'); }
+    else if (Date.now() - S.regenerando > 20 * 60000) { clearInterval(tRegen); S.regenerando = null; render(); toast('No llegó el resumen: ¿la PC está prendida?'); }
+  }, 30000);
+}
+
+// ───────────────────────── arrastrar para ordenar áreas ─────────────────────────
+let ARR = null, sinClick = false;
+document.addEventListener('pointerdown', (ev) => {
+  const asa = ev.target.closest('.asa');
+  if (!asa) return;
+  const item = asa.closest('[data-orden]');
+  ev.preventDefault();
+  ARR = { item, lista: item.parentElement, y0: ev.clientY, movio: false };
+  item.classList.add('arrastrando');
+  try { asa.setPointerCapture(ev.pointerId); } catch {}
+});
+document.addEventListener('pointermove', (ev) => {
+  if (!ARR) return;
+  const { item, lista } = ARR;
+  if (Math.abs(ev.clientY - ARR.y0) > 3) ARR.movio = true;
+  const otros = [...lista.children].filter((x) => x !== item);
+  let ref = null;
+  for (const o of otros) { const r = o.getBoundingClientRect(); if (ev.clientY < r.top + r.height / 2) { ref = o; break; } }
+  if ((ref ? ref.previousElementSibling : lista.lastElementChild) !== item) {
+    const antes = item.offsetTop;
+    lista.insertBefore(item, ref);
+    ARR.y0 += item.offsetTop - antes;
+  }
+  item.style.transform = `translateY(${ev.clientY - ARR.y0}px)`;
+});
+const soltar = () => {
+  if (!ARR) return;
+  const { item, lista, movio } = ARR;
+  ARR = null;
+  item.style.transform = '';
+  item.classList.remove('arrastrando');
+  if (!movio) return;
+  sinClick = true;
+  setTimeout(() => (sinClick = false), 50);
+  const orden = [...lista.querySelectorAll('[data-orden]')].map((x) => x.dataset.orden);
+  mutar((e) => { for (const a of e.areas) { const i = orden.indexOf(a.id); if (i >= 0 && a.orden !== i) { a.orden = i; a.u = ahoraMs(); } } });
+};
+document.addEventListener('pointerup', soltar);
+document.addEventListener('pointercancel', soltar);
+
+// ───────────────────────── fondo del día + clima ─────────────────────────
+const PALETAS = [[150, 30, 250], [190, 20, 300], [120, 45, 330], [170, 260, 35], [205, 340, 60], [95, 200, 15], [230, 160, 40], [140, 280, 20], [180, 50, 270], [265, 140, 25], [10, 170, 220], [60, 190, 300]];
+function fondoDelDia() {
+  const d = new Date();
+  const n = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
+  const [h1, h2, h3] = PALETAS[n % PALETAS.length];
+  const st = document.documentElement.style;
+  st.setProperty('--h1', h1); st.setProperty('--h2', h2); st.setProperty('--h3', h3);
+}
+
+const CLIMA_COD = {
+  0: ['☀️', 'Despejado'], 1: ['🌤️', 'Casi despejado'], 2: ['⛅', 'Parcialmente nublado'], 3: ['☁️', 'Nublado'],
+  45: ['🌫️', 'Niebla'], 48: ['🌫️', 'Niebla'], 51: ['🌦️', 'Llovizna'], 53: ['🌦️', 'Llovizna'], 55: ['🌧️', 'Llovizna fuerte'],
+  61: ['🌧️', 'Lluvia débil'], 63: ['🌧️', 'Lluvia'], 65: ['🌧️', 'Lluvia fuerte'], 66: ['🌧️', 'Lluvia helada'], 67: ['🌧️', 'Lluvia helada'],
+  71: ['🌨️', 'Nieve'], 73: ['🌨️', 'Nieve'], 75: ['❄️', 'Nevada'], 80: ['🌦️', 'Chaparrones'], 81: ['🌧️', 'Chaparrones'], 82: ['⛈️', 'Chaparrones fuertes'],
+  95: ['⛈️', 'Tormenta'], 96: ['⛈️', 'Tormenta con granizo'], 99: ['⛈️', 'Tormenta con granizo'],
+};
+let CLIMA = ls.json('sec.clima');
+async function cargarClima() {
+  const cfg = S.estado?.config?.clima || { lat: -34.9, lon: -56.16, lugar: 'Montevideo' };
+  if (CLIMA && CLIMA.lugar === cfg.lugar && Date.now() - CLIMA.t < 30 * 60000) return;
+  try {
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${cfg.lat}&longitude=${cfg.lon}&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&forecast_days=1&timezone=auto`;
+    const j = await (await fetch(u)).json();
+    CLIMA = {
+      t: Date.now(), lugar: cfg.lugar, temp: Math.round(j.current.temperature_2m), cod: j.current.weather_code, dia: j.current.is_day,
+      max: Math.round(j.daily.temperature_2m_max[0]), min: Math.round(j.daily.temperature_2m_min[0]), lluvia: j.daily.precipitation_probability_max[0],
+    };
+    ls.set('sec.clima', JSON.stringify(CLIMA));
+    pintarClima();
+  } catch {}
+}
+function htmlClima() {
+  if (!CLIMA) return '';
+  let [ico, txt] = CLIMA_COD[CLIMA.cod] || ['🌡️', ''];
+  if (!CLIMA.dia && CLIMA.cod <= 1) ico = '🌙';
+  return `<span class="clima-ico">${ico}</span><b>${CLIMA.temp}°</b><span>${esc(txt)} · ${CLIMA.max}°/${CLIMA.min}°${CLIMA.lluvia >= 20 ? ` · 💧${CLIMA.lluvia}%` : ''} · ${esc(CLIMA.lugar)}</span>`;
+}
+function pintarClima() { const el = $('#clima'); if (el) el.innerHTML = htmlClima(); }
 
 // ───────────────────────── acciones ─────────────────────────
 const ACC = {
@@ -871,20 +1144,24 @@ const ACC = {
   },
   salir() { if (confirm('¿Cerrar sesión en este dispositivo?')) { ls.del('sec.token'); ls.del('sec.cache'); location.reload(); } },
   async actualizar() {
-    toast('Pidiendo actualización…');
-    try {
-      const r = await GH.leer('datos/pedido.json');
-      await GH.escribir('datos/pedido.json', { pedido: new Date().toISOString(), por: 'página' }, r.sha, 'Página: pedir actualización');
-      toast('Listo. Si tu PC está prendida, el resumen se actualiza en unos minutos.');
-    } catch (e) { toast(`No pude pedirla: ${e.message}`); }
     await cargar();
     calendarioEnVivo();
     fechasClientes();
+    cargarClima();
+    regenerar();
   },
+  regenerar,
+  dia(el) { menuDia(el.dataset.dia, el); },
+  mes(el) { S.mesCal = el.dataset.mes || null; render(); },
+  'editar-area'(el) { hojaArea(el.dataset.id); },
+  'menu-tarea'(el) { menuTarea(el.dataset.id, el); },
   avanzar(el) { const p = buscarPieza(el.dataset.id); if (p) setEtapa(p.id, N.siguienteEtapa(p)); },
   entregar(el) { const p = buscarPieza(el.dataset.id); if (p) setEtapa(p.id, p.etapa === 'entregado' ? (p.cuota.simple ? 'pendiente' : 'editado') : 'entregado'); },
-  pieza(el) { hojaPieza(el.dataset.id); },
-  'set-etapa'(el) { setEtapa(el.dataset.id, el.dataset.etapa); hojaPieza(el.dataset.id); },
+  pieza(el) { menuPieza(el.dataset.id, el); },
+  'set-etapa'(el) {
+    setEtapa(el.dataset.id, el.dataset.etapa);
+    for (const b of document.querySelectorAll('.etapas button')) b.classList.toggle('on', b === el);
+  },
   bloquear(el) { setPieza(el.dataset.id, { bloqueado: el.checked }); },
   descartar(el) {
     const p = buscarPieza(el.dataset.id);
@@ -943,7 +1220,10 @@ const ACC = {
       p.items = (p.items || prepItems(s)).map((i) => (i.id === el.dataset.id ? { ...i, hecho: !i.hecho } : i));
       p.u = ahoraMs(); e.showsPrep[clave] = p;
     });
-    hojaShow(clave);
+    const on = !el.classList.contains('on');
+    el.classList.toggle('on', on);
+    el.innerHTML = on ? I.check : '';
+    el.closest('.fila')?.classList.toggle('hecha', on);
   },
   'borrar-prep'(el) {
     const clave = el.dataset.clave;
@@ -1053,6 +1333,18 @@ const FORM = {
     mutar((e) => { const p = e.showsPrep[clave] || {}; p.items = [...(p.items || prepItems(s)), { id: N.nuevoId('i'), t, hecho: false }]; p.u = ahoraMs(); e.showsPrep[clave] = p; });
     hojaShow(clave);
   },
+  'editar-area'(f, fd) {
+    const id = f.dataset.id;
+    mutar((e) => {
+      const a = e.areas.find((x) => x.id === id);
+      a.nombre = fd.get('nombre').trim() || a.nombre;
+      a.corto = fd.get('corto').trim() || a.nombre;
+      a.color = fd.get('color');
+      a.nota = fd.get('nota').trim();
+      a.u = ahoraMs();
+    }, 'Guardado');
+    cerrarHoja();
+  },
   'nueva-cuota'(f, fd) {
     mutar((e) => e.cuotas.push({ id: N.nuevoId('q'), area: f.dataset.area, nombre: fd.get('nombre').trim(), cantidad: Number(fd.get('cantidad')) || 1, horas: Number(fd.get('horas')) || 0, simple: true, desde: N.diaStr(N.lunes(new Date())), u: ahoraMs() }), 'Meta semanal activada');
     cerrarHoja();
@@ -1076,6 +1368,7 @@ const FORM = {
       const c = e.config;
       for (const k of ['horasMin', 'horasMax', 'inicioJornada', 'horasFinde', 'horasTarea', 'horasGrabacionMin']) c[k] = Number(fd.get(k));
       c.pomodoro = { foco: Number(fd.get('pFoco')), descanso: Number(fd.get('pDescanso')), largo: Number(fd.get('pLargo')), cada: Number(fd.get('pCada')) };
+      c.clima = { lugar: fd.get('climaLugar').trim() || 'Montevideo', lat: Number(fd.get('climaLat')), lon: Number(fd.get('climaLon')) };
       c.calendario = { url: fd.get('calUrl').trim(), clave: fd.get('calClave').trim() };
       c.reglas = reglas;
       c.u = ahoraMs();
@@ -1095,6 +1388,8 @@ const FORM = {
 };
 
 document.addEventListener('click', (ev) => {
+  if (MENU && !MENU.contains(ev.target)) { cerrarMenu(); if (!ev.target.closest('[data-a]')) return; }
+  if (sinClick) { ev.preventDefault(); return; }
   if (ev.target.id === 'hoja') return cerrarHoja();
   const el = ev.target.closest('[data-a]');
   if (!el) return;
@@ -1108,7 +1403,19 @@ document.addEventListener('submit', (ev) => {
   ev.preventDefault();
   FORM[f.dataset.form]?.(f, new FormData(f));
 });
-document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('#hoja').hidden) cerrarHoja(); });
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  if (MENU) cerrarMenu();
+  else if (!$('#hoja').hidden) cerrarHoja();
+});
+// clic derecho (o mantener apretado en el celu) sobre una pieza o tarea → menú rápido
+document.addEventListener('contextmenu', (ev) => {
+  const el = ev.target.closest('[data-ctx]');
+  if (!el || ev.target.closest('input,textarea')) return;
+  ev.preventDefault();
+  if (el.dataset.ctx === 'pieza') menuPieza(el.dataset.id, ev);
+  else if (el.dataset.ctx === 'tarea') menuTarea(el.dataset.id, ev);
+});
 
 // ───────────────────────── reloj + pomodoro ─────────────────────────
 const P = Object.assign({ modo: 'reloj', fase: 'foco', corriendo: false, fin: null, restante: null, ciclos: 0 }, ls.json('sec.pomo', {}));
@@ -1126,10 +1433,11 @@ function htmlReloj() {
         <circle class="prog" id="pomo-prog" cx="110" cy="110" r="104" fill="none" stroke-width="5" stroke-linecap="round" stroke-dasharray="653.5" stroke-dashoffset="${pomo ? 653.5 : 653.5}"/></svg>
       <div><div class="hora" id="hora"></div><div class="hora-sub" id="hora-sub"></div></div>
     </div>
-    ${pomo ? `<div class="pomo-ctrl">
-      <button class="icono" data-a="pomo-reset" title="Reiniciar">${I.reset}</button>
-      <button class="icono principal" data-a="pomo-play" title="${P.corriendo ? 'Pausar' : 'Empezar'}">${P.corriendo ? I.pausa : I.play}</button>
-      <button class="icono" data-a="pomo-saltar" title="Saltar fase">${I.saltar}</button></div>` : ''}`;
+    <div class="pomo-ctrl ${pomo ? '' : 'oculto'}" ${pomo ? '' : 'aria-hidden="true"'}>
+      <button class="icono" data-a="pomo-reset" title="Reiniciar" ${pomo ? '' : 'tabindex="-1"'}>${I.reset}</button>
+      <button class="icono principal" data-a="pomo-play" title="${P.corriendo ? 'Pausar' : 'Empezar'}" ${pomo ? '' : 'tabindex="-1"'}>${P.corriendo ? I.pausa : I.play}</button>
+      <button class="icono" data-a="pomo-saltar" title="Saltar fase" ${pomo ? '' : 'tabindex="-1"'}>${I.saltar}</button></div>
+    <div class="clima" id="clima">${htmlClima()}</div>`;
 }
 
 function pintarReloj(rehacer = false) {
@@ -1241,6 +1549,7 @@ function vistaLogin(error = '') {
 
 // ───────────────────────── arranque ─────────────────────────
 function iniciar() {
+  fondoDelDia();
   if (!GH.token) return vistaLogin();
   const cache = ls.json('sec.cache');
   if (cache?.estado) {
@@ -1251,7 +1560,8 @@ function iniciar() {
   setInterval(() => pintarReloj(), 1000);
   setInterval(() => { if (!document.hidden) cargar(); }, 5 * 60000);
   let ultimoDia = N.diaStr(new Date());
-  setInterval(() => { const d = N.diaStr(new Date()); if (d !== ultimoDia) { ultimoDia = d; render(); } }, 60000);
+  setInterval(() => { const d = N.diaStr(new Date()); if (d !== ultimoDia) { ultimoDia = d; fondoDelDia(); render(); } }, 60000);
+  setInterval(cargarClima, 30 * 60000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar(); });
 }
 iniciar();

@@ -15,6 +15,7 @@ export const NIVELES = {
   libre: { nombre: 'Sin pendientes', orden: -1 },
   adelantado: { nombre: 'Adelantado', orden: 0 },
   al_dia: { nombre: 'Al día', orden: 1 },
+  vence_hoy: { nombre: 'Vence hoy', orden: 2 },
   en_riesgo: { nombre: 'En riesgo', orden: 2 },
   atrasado: { nombre: 'Atrasado', orden: 3 },
 };
@@ -88,6 +89,7 @@ export function asegurarEstado(e) {
   for (const k of ['areas', 'cuotas', 'tareas', 'metas', 'eventosVida', 'shows']) e[k] = e[k] || [];
   e.piezas = e.piezas || {};
   e.showsPrep = e.showsPrep || {};
+  e.libres = e.libres || {}; // { 'AAAA-MM-DD': { off: true, u } } días que no trabajás
   e.dinero = e.dinero || {};
   e.dinero.moneda = e.dinero.moneda || '$';
   e.dinero.tarifas = e.dinero.tarifas || {};
@@ -98,7 +100,7 @@ export function asegurarEstado(e) {
 // ───────────────────────── fusión (página ↔ repo) ─────────────────────────
 // Cada entidad lleva `u` (ms de la última edición). Gana la más nueva.
 const LISTAS = ['areas', 'cuotas', 'tareas', 'metas', 'eventosVida', 'shows'];
-const MAPAS = ['piezas', 'showsPrep'];
+const MAPAS = ['piezas', 'showsPrep', 'libres'];
 function fusionLista(a = [], b = []) {
   const m = new Map();
   for (const x of b) m.set(x.id, x);
@@ -173,8 +175,10 @@ function horasGrabacion(estado, eventos, fecha, ahora) {
 }
 
 // ───────────────────────── capacidad ─────────────────────────
+export const esLibre = (estado, s) => !!estado.libres?.[s]?.off;
 export function factorVida(estado, fecha) {
   const s = diaStr(fecha);
+  if (esLibre(estado, s)) return 0;
   let f = 1;
   for (const ev of vivos(estado.eventosVida)) {
     if (ev.desde <= s && s <= (ev.hasta || ev.desde)) f = Math.min(f, ev.capacidad ?? 0);
@@ -232,14 +236,16 @@ function etapaAntesDe(p, t) {
 }
 const ultimoCambio = (p) => (p.hist?.length ? p.hist[p.hist.length - 1].t : 0);
 
-export function expandirPiezas(estado, ahora = new Date()) {
+// Incluye la semana que viene (futura: true) para poder adelantar trabajo.
+export function expandirPiezas(estado, ahora = new Date(), semanasAdelante = 1) {
   const actual = lunes(ahora);
+  const proxima = sumarDias(actual, 7 * Math.max(1, semanasAdelante));
   const out = [];
   for (const cuota of vivos(estado.cuotas)) {
     if (cuota.activa === false && !cuota.hasta) continue;
     let w = lunes(parseDia(cuota.desde || estado.config.inicio));
-    const fin = cuota.hasta ? lunes(parseDia(cuota.hasta)) : actual;
-    for (; w <= fin && w <= actual; w = sumarDias(w, 7)) {
+    const fin = cuota.hasta ? lunes(parseDia(cuota.hasta)) : proxima;
+    for (; w <= fin && w <= proxima; w = sumarDias(w, 7)) {
       if (semanaPausada(estado, w, cuota.area)) continue;
       const sem = semanaId(w);
       const n = cantidadEn(cuota, w);
@@ -261,6 +267,7 @@ export function expandirPiezas(estado, ahora = new Date()) {
           monto: st.monto,
           hist: st.hist || [],
           atrasada: w < actual,
+          futura: w > actual,
         });
       }
     }
@@ -298,10 +305,15 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
   const lun = lunes(ahora), lunMs = lun.getTime();
   const dom = sumarDias(lun, 6), domS = diaStr(dom);
   const eventos = prepararEventos(estado, cal);
-  const areas = vivos(estado.areas);
+  const areas = vivos(estado.areas).sort((a, b) => (a.orden ?? 99) - (b.orden ?? 99));
 
-  // piezas de esta semana + arrastradas
-  const todas = expandirPiezas(estado, ahora);
+  // piezas de esta semana + arrastradas (+ las de la semana que viene, aparte)
+  const pron = pronostico(estado, eventos, ahora);
+  // hasta qué semana hay que poder adelantar (la última que no te da por días libres / vacaciones)
+  let horizonte = 1;
+  pron.forEach((w, i) => { if (w.carga > w.cap + 0.05) horizonte = Math.max(horizonte, i + 1); });
+  const todas = expandirPiezas(estado, ahora, horizonte);
+  const futuras = todas.filter((p) => p.futura && !p.descartada);
   const piezas = todas.filter((p) => {
     if (p.descartada) return false;
     if (p.lunes.getTime() === lunMs) return true;
@@ -321,13 +333,24 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
         hecho: h * PESO[p.etapa], resta: h * (1 - PESO[p.etapa]),
         bloqueado: p.bloqueado && p.etapa !== 'entregado',
         atrasada: p.atrasada && p.etapa !== 'entregado',
+        venceHoy: !p.atrasada && p.etapa !== 'entregado' && !p.bloqueado && hoyS === domS,
       };
     }),
     ...tareasSemana.map((t) => {
       const h = horasTarea(estado, t), pr = progresoTarea(t);
-      return { tipo: 'tarea', ref: t, area: t.area, h, hecho: h * pr, resta: h * (1 - pr), vencida: !t.hecha && t.fecha < hoyS };
+      return { tipo: 'tarea', ref: t, area: t.area, h, hecho: h * pr, resta: h * (1 - pr), vencida: !t.hecha && t.fecha < hoyS, venceHoy: !t.hecha && t.fecha === hoyS };
     }),
   ];
+
+  // ventaja: trabajo ya hecho de cosas que vencen después de esta semana
+  const ventajaItems = [
+    ...futuras.filter((p) => PESO[p.etapa] > 0).map((p) => ({ area: p.area, h: (p.cuota.horas || 1) * PESO[p.etapa] })),
+    ...tareas
+      .filter((t) => t.fecha && t.fecha > domS && progresoTarea(t) > 0 && (!t.hecha || (t.hechaEn || 0) >= lunMs))
+      .map((t) => ({ area: t.area, h: horasTarea(estado, t) * progresoTarea(t) })),
+  ];
+  const ventaja = ventajaItems.reduce((s, i) => s + i.h, 0);
+  const adelantadas = futuras.filter((p) => p.etapa === 'entregado').length;
 
   // capacidad
   const sum = (f) => { let s = 0; for (let d = new Date(hoy); d <= dom; d = sumarDias(d, 1)) s += f(d); return s; };
@@ -341,59 +364,78 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
   const activos = items.filter((i) => !i.bloqueado);
   const total = activos.reduce((s, i) => s + i.h, 0);
   const hecho = activos.reduce((s, i) => s + i.hecho, 0);
-  const necesarias = activos.reduce((s, i) => s + i.resta, 0);
+  const necesariasSemana = activos.reduce((s, i) => s + i.resta, 0);
   const bloqueadas = items.filter((i) => i.bloqueado).map((i) => i.ref);
   const atrasadas = items.filter((i) => i.atrasada && !i.bloqueado).map((i) => i.ref);
   const vencidas = items.filter((i) => i.vencida).map((i) => i.ref);
 
+  // lo que hay que dejar hecho antes del lunes que viene para cubrir días libres/vacaciones que vienen
+  const adelantoNecesario = pron[0]?.antes || 0;
+  const adelantoFalta = Math.max(0, adelantoNecesario - ventaja);
+  const hayVentaja = ventaja - adelantoNecesario >= 0.05;
+  const txtVentaja = hayVentaja ? ` Ya adelantaste ${fh(ventaja - adelantoNecesario)} de más para las semanas que vienen.` : '';
+  const necesarias = necesariasSemana + adelantoFalta;
+  const txtAdelanto = adelantoFalta > 0.05 ? ` Incluye ${fh(adelantoFalta)} para adelantar por días libres que vienen.` : '';
+  const venceHoy = items.filter((i) => i.venceHoy && i.resta > 0.01).map((i) => i.ref);
   let nivel, mensaje;
   if (necesarias < 0.05) {
-    nivel = total > 0 ? 'adelantado' : 'libre';
-    mensaje = total > 0 ? 'Terminaste todo lo de esta semana. Lo que hagas ahora es ventaja.' : 'No tenés nada pendiente para esta semana.';
-  } else if (necesarias <= cap8 * 0.7) {
-    nivel = 'adelantado';
-    mensaje = `Te quedan ${fh(necesarias)} de trabajo y tenés ${fh(cap8)} disponibles. Vas sobrado.`;
+    if (total === 0 && !hayVentaja) {
+      nivel = 'libre';
+      mensaje = 'No tenés nada pendiente para esta semana.';
+    } else {
+      nivel = hayVentaja ? 'adelantado' : 'al_dia';
+      mensaje = `Terminaste todo lo de esta semana.${hayVentaja ? txtVentaja : ' Lo que hagas ahora ya es adelantar la que viene.'}`;
+    }
   } else if (necesarias <= cap8) {
-    nivel = 'al_dia';
-    mensaje = `Te quedan ${fh(necesarias)} de trabajo para ${fh(cap8)} disponibles. Vas bien.`;
+    nivel = hayVentaja ? 'adelantado' : 'al_dia';
+    mensaje = `Te quedan ${fh(necesarias)} de trabajo para ${fh(cap8)} disponibles. Vas bien.${txtAdelanto}${txtVentaja}`;
   } else if (necesarias <= cap10) {
     nivel = 'en_riesgo';
-    mensaje = `Te quedan ${fh(necesarias)} y con jornadas de ${c.horasMin} h tenés ${fh(cap8)}. Para llegar necesitás jornadas largas.`;
+    mensaje = `Te quedan ${fh(necesarias)} y con jornadas de ${c.horasMin} h tenés ${fh(cap8)}. Para llegar necesitás jornadas largas.${txtAdelanto}`;
   } else if (necesarias <= cap10 + capFinde) {
     nivel = 'en_riesgo';
-    mensaje = `Te quedan ${fh(necesarias)} y entre semana solo te dan ${fh(cap10)}. Si no apurás, vas a tener que trabajar el finde.`;
+    mensaje = `Te quedan ${fh(necesarias)} y entre semana solo te dan ${fh(cap10)}. Si no apurás, vas a tener que trabajar el finde.${txtAdelanto}`;
   } else {
     nivel = 'atrasado';
     mensaje = `Te quedan ${fh(necesarias)} y aunque trabajes el finde tenés ${fh(cap10 + capFinde)}. Conviene hablar con algún cliente o descartar algo.`;
   }
-  if ((atrasadas.length || vencidas.length) && NIVELES[nivel].orden < 2) {
-    nivel = 'en_riesgo';
-    mensaje += ` Pero arrastrás ${atrasadas.length + vencidas.length} cosa${atrasadas.length + vencidas.length > 1 ? 's' : ''} de antes.`;
+  // Atrasado = algo ya venció (o es imposible llegar). Lo que vence hoy todavía no está atrasado.
+  const nVencidas = atrasadas.length + vencidas.length;
+  if (nVencidas) {
+    nivel = 'atrasado';
+    mensaje += nVencidas > 1 ? ` Tenés ${nVencidas} cosas que ya vencieron.` : ' Tenés 1 cosa que ya venció.';
+  } else if (venceHoy.length && NIVELES[nivel].orden < 2) {
+    nivel = 'vence_hoy';
+    mensaje = `Hoy vence${venceHoy.length > 1 ? 'n' : ''} ${venceHoy.length} cosa${venceHoy.length > 1 ? 's' : ''}. ${mensaje}`;
   }
 
-  // por área
+  // por área: atrasado solo si algo venció; el ritmo se mide con las cuotas.
   const porArea = {};
   for (const a of areas) {
     const its = items.filter((i) => i.area === a.id);
     const act = its.filter((i) => !i.bloqueado);
     const t = act.reduce((s, i) => s + i.h, 0), h = act.reduce((s, i) => s + i.hecho, 0);
     const prog = t ? h / t : 1;
+    const vent = ventajaItems.filter((i) => i.area === a.id).reduce((s, i) => s + i.h, 0);
     let n;
-    if (!its.length) n = 'libre';
-    else if (t - h < 0.05) n = 'adelantado';
+    if (its.some((i) => (i.atrasada && !i.bloqueado) || i.vencida)) n = 'atrasado';
+    else if (!its.length) n = vent >= 0.05 ? 'adelantado' : 'libre';
+    else if (t - h < 0.05) n = vent >= 0.05 ? 'adelantado' : 'al_dia';
     else {
-      const d = prog - transcurrido;
-      n = d >= 0.15 ? 'adelantado' : d >= -0.1 ? 'al_dia' : d >= -0.3 ? 'en_riesgo' : 'atrasado';
+      const pz = act.filter((i) => i.tipo === 'pieza');
+      const tp = pz.reduce((s, i) => s + i.h, 0), hp = pz.reduce((s, i) => s + i.hecho, 0);
+      const d = tp ? hp / tp - transcurrido : 0;
+      n = d >= -0.1 ? (vent >= 0.05 ? 'adelantado' : 'al_dia') : 'en_riesgo';
+      if (its.some((i) => i.venceHoy && i.resta > 0.01)) n = 'vence_hoy';
     }
-    if (its.some((i) => (i.atrasada && !i.bloqueado) || i.vencida)) n = peor(n, 'en_riesgo');
     porArea[a.id] = {
-      nivel: n, progreso: prog, total: t, hecho: h,
+      nivel: n, progreso: prog, total: t, hecho: h, ventaja: vent,
       bloqueadas: its.filter((i) => i.bloqueado).length,
       pendientes: act.filter((i) => i.resta > 0.01).length,
     };
   }
 
-  const plan = planDeHoy(estado, eventos, ahora, piezas, tareas);
+  const plan = planDeHoy(estado, eventos, ahora, piezas, tareas, futuras, adelantoFalta);
   const hechoHoy = calcularHechoHoy(estado, todas, tareas, hoyMs);
   const restaPlan = plan.filter((p) => !p.extra).reduce((s, p) => s + p.horas, 0);
   const pctHoy = hechoHoy + restaPlan > 0 ? hechoHoy / (hechoHoy + restaPlan) : 1;
@@ -401,9 +443,9 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
   const shows = listaShows(estado, eventos, ahora);
 
   return {
-    ahora, hoyS, lun, dom, eventos, areas, todas, piezas, tareas, items,
-    semana: { nivel, mensaje, total, hecho, necesarias, cap8, cap10, capFinde, transcurrido, pct: total ? hecho / total : 1 },
-    porArea, bloqueadas, atrasadas, vencidas,
+    ahora, hoyS, lun, dom, eventos, areas, todas, piezas, futuras, tareas, items,
+    semana: { nivel, mensaje, total, hecho, necesarias, necesariasSemana, adelantoFalta, cap8, cap10, capFinde, transcurrido, ventaja, adelantadas, pct: total ? hecho / total : 1 },
+    porArea, bloqueadas, atrasadas, vencidas, venceHoy,
     plan, hechoHoy, pctHoy,
     shows,
     showHoy: shows.filter((s) => s.dia === hoyS),
@@ -413,7 +455,7 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
     vidaProxima: vivos(estado.eventosVida)
       .filter((ev) => ev.desde > hoyS && diasEntre(hoy, parseDia(ev.desde)) <= 60)
       .sort((a, b) => a.desde.localeCompare(b.desde)),
-    pronostico: pronostico(estado, eventos, ahora),
+    pronostico: pron, adelantoNecesario, adelantoFalta,
   };
 }
 
@@ -430,7 +472,7 @@ function diasHabilesRestantes(estado, desde, hasta) {
   return n;
 }
 
-export function planDeHoy(estado, eventos, ahora, piezas, tareas) {
+export function planDeHoy(estado, eventos, ahora, piezas, tareas, futuras = [], adelantoFalta = 0) {
   const c = estado.config;
   const hoy = inicioDia(ahora), hoyS = diaStr(hoy), hoyMs = hoy.getTime();
   const dom = sumarDias(lunes(ahora), 6), domS = diaStr(dom);
@@ -487,7 +529,25 @@ export function planDeHoy(estado, eventos, ahora, piezas, tareas) {
   // 5. tareas de la semana que quedan
   for (const t of vivasT.filter((t) => t.fecha && t.fecha > hoyS && t.fecha <= domS && !usados.has(t.id)).sort((a, b) => a.fecha.localeCompare(b.fecha)))
     add(itemTarea(estado, t, hoy, 'semana', false, budget <= 0.01));
-  // 6. sin fecha: sugerencias si sobra tiempo
+  // 6. adelanto obligatorio (días libres que vienen): repartido en los días que quedan
+  if (adelantoFalta > 0.05) {
+    let cupo = adelantoFalta / diasRest;
+    const orden = [...futuras].filter((p) => p.etapa !== 'entregado' && !p.bloqueado).sort((a, b) => a.lunes - b.lunes || PESO[b.etapa] - PESO[a.etapa] || a.n - b.n);
+    for (const p of orden) {
+      if (cupo <= 0.05) break;
+      const h = (p.cuota.horas || 1) * (1 - PESO[p.etapa]);
+      add({ tipo: 'pieza', ref: p, area: p.area, horas: h, motivo: 'adelantar', urgente: false });
+      cupo -= h;
+    }
+  }
+  // 7. cuotas ya completas esta semana: sugerir adelantar una de la que viene
+  for (const p of futuras) {
+    if (p.etapa === 'entregado' || p.bloqueado) continue;
+    const quedan = piezas.some((x) => x.cuota.id === p.cuota.id && x.etapa !== 'entregado' && !x.bloqueado);
+    if (quedan || plan.some((it) => it.motivo === 'adelantar' && it.ref.cuota?.id === p.cuota.id)) continue;
+    add({ tipo: 'pieza', ref: p, area: p.area, horas: (p.cuota.horas || 1) * (1 - PESO[p.etapa]), motivo: 'adelantar', extra: true });
+  }
+  // 8. sin fecha: sugerencias si sobra tiempo
   const sinFecha = vivasT.filter((t) => !t.fecha).sort((a, b) => (b.prioridad || 0) - (a.prioridad || 0) || (a.creada || 0) - (b.creada || 0));
   for (const t of sinFecha.slice(0, 4)) add({ ...itemTarea(estado, t, hoy, 'libre'), extra: true });
   // ordenar: urgentes, luego por área para que no se mezcle
@@ -553,35 +613,44 @@ export function listaShows(estado, eventos, ahora) {
 export const PREP_BASE = ['Repasar el set', 'Promocionar el show', 'Confirmar horario y lugar'];
 
 // ───────────────────────── pronóstico ─────────────────────────
+// Semanas que vienen: carga "bruta" (todo lo que vence esa semana, hecho o no) contra horas disponibles.
+// `antes` = horas que tienen que estar hechas ANTES de que empiece esa semana (por días libres, vacaciones…),
+// calculado de atrás para adelante: si una semana no te da, el faltante pasa a la anterior.
 export function pronostico(estado, eventos, ahora, semanas = 8) {
   const out = [];
   const base = lunes(ahora);
-  const tareas = vivos(estado.tareas).filter((t) => !t.hecha && t.fecha);
-  for (let k = 0; k <= semanas; k++) {
+  const tareas = vivos(estado.tareas).filter((t) => t.fecha);
+  for (let k = 1; k <= semanas; k++) {
     const w = sumarDias(base, 7 * k), fin = sumarDias(w, 6);
     const ws = diaStr(w), fs = diaStr(fin);
     let carga = 0;
-    if (k > 0) {
-      for (const cu of vivos(estado.cuotas)) {
-        if (cu.activa === false) continue;
-        if (cu.desde && cu.desde > fs) continue;
-        if (cu.hasta && cu.hasta < ws) continue;
-        if (semanaPausada(estado, w, cu.area)) continue;
-        carga += cantidadEn(cu, w) * (cu.horas || 1);
-      }
-      for (const t of tareas) if (t.fecha >= ws && t.fecha <= fs) carga += horasTarea(estado, t) * (1 - progresoTarea(t));
+    for (const cu of vivos(estado.cuotas)) {
+      if (cu.activa === false) continue;
+      if (cu.desde && cu.desde > fs) continue;
+      if (cu.hasta && cu.hasta < ws) continue;
+      if (semanaPausada(estado, w, cu.area)) continue;
+      carga += cantidadEn(cu, w) * (cu.horas || 1);
     }
+    for (const t of tareas) if (t.fecha >= ws && t.fecha <= fs) carga += horasTarea(estado, t);
     let cap = 0, capMax = 0;
-    const vida = new Set();
+    const vida = new Set(), libres = [];
     for (let d = new Date(w); d <= fin; d = sumarDias(d, 1)) {
       cap += capacidadDia(estado, eventos, d, null, 'min');
       capMax += capacidadDia(estado, eventos, d, null, 'max') + capacidadDia(estado, eventos, d, null, 'finde');
       for (const ev of eventosVidaDelDia(estado, d)) vida.add(ev.titulo);
+      if (esLibre(estado, diaStr(d))) libres.push(diaStr(d));
     }
-    const nivel = carga <= cap * 0.8 ? 'adelantado' : carga <= cap ? 'al_dia' : carga <= capMax ? 'en_riesgo' : 'atrasado';
-    out.push({ lunes: w, semana: semanaId(w), carga, cap, capMax, nivel, vida: [...vida] });
+    out.push({ lunes: w, semana: semanaId(w), carga, cap, capMax, vida: [...vida], libres });
   }
-  return out.slice(1);
+  let antesSig = 0;
+  for (let i = out.length - 1; i >= 0; i--) {
+    const w = out[i];
+    w.exige = w.carga + antesSig; // lo suyo + lo que tiene que adelantar para la siguiente
+    w.antes = Math.max(0, w.exige - w.cap);
+    w.nivel = w.exige <= w.cap ? 'al_dia' : w.exige <= w.capMax ? 'en_riesgo' : 'atrasado';
+    antesSig = w.antes;
+  }
+  return out;
 }
 
 // ───────────────────────── recordatorios (para Google Calendar) ─────────────────────────

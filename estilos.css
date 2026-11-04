@@ -16,11 +16,13 @@
   --n-adelantado: #4c9a76;
   --n-al_dia: #5a86b2;
   --n-en_riesgo: #cf9433;
+  --n-vence_hoy: #e0743a;
   --n-atrasado: #c6604f;
   --n-libre: #97a39c;
-  --blob-1: #cfe0d4;
-  --blob-2: #ecd9c3;
-  --blob-3: #d9d6ec;
+  --h1: 150; --h2: 30; --h3: 250;
+  --blob-1: hsl(var(--h1) 40% 83%);
+  --blob-2: hsl(var(--h2) 50% 85%);
+  --blob-3: hsl(var(--h3) 40% 86%);
   --sombra: 0 1px 2px rgba(30, 40, 35, 0.04), 0 10px 34px rgba(30, 40, 35, 0.07);
   --radio: 22px;
   --radio-s: 14px;
@@ -46,11 +48,12 @@
     --n-adelantado: #6fc49c;
     --n-al_dia: #7eaad6;
     --n-en_riesgo: #e2b15c;
+    --n-vence_hoy: #f2955c;
     --n-atrasado: #e0806f;
     --n-libre: #7f8d86;
-    --blob-1: #173a2e;
-    --blob-2: #3a2c1d;
-    --blob-3: #262546;
+    --blob-1: hsl(var(--h1) 42% 16%);
+    --blob-2: hsl(var(--h2) 38% 17%);
+    --blob-3: hsl(var(--h3) 32% 20%);
     --sombra: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.35);
     color-scheme: dark;
   }
@@ -72,11 +75,12 @@
   --n-adelantado: #6fc49c;
   --n-al_dia: #7eaad6;
   --n-en_riesgo: #e2b15c;
+    --n-vence_hoy: #f2955c;
   --n-atrasado: #e0806f;
   --n-libre: #7f8d86;
-  --blob-1: #173a2e;
-  --blob-2: #3a2c1d;
-  --blob-3: #262546;
+  --blob-1: hsl(var(--h1) 42% 16%);
+  --blob-2: hsl(var(--h2) 38% 17%);
+  --blob-3: hsl(var(--h3) 32% 20%);
   --sombra: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 40px rgba(0, 0, 0, 0.35);
   color-scheme: dark;
 }
@@ -232,6 +236,7 @@ a { color: var(--acento-2); }
 .n-adelantado { --c: var(--n-adelantado); }
 .n-al_dia { --c: var(--n-al_dia); }
 .n-en_riesgo { --c: var(--n-en_riesgo); }
+.n-vence_hoy { --c: var(--n-vence_hoy); }
 .n-atrasado { --c: var(--n-atrasado); }
 .n-libre { --c: var(--n-libre); }
 
@@ -451,3 +456,98 @@ details.plegable > summary { cursor: pointer; color: var(--tinta-2); font-size: 
 details.plegable > summary::-webkit-details-marker { display: none; }
 details.plegable > summary::before { content: '›'; display: inline-block; margin-right: 8px; transition: transform 0.2s; }
 details.plegable[open] > summary::before { transform: rotate(90deg); }
+
+/* ───────── v4: menú rápido, adelantos, orden, clima ───────── */
+.hero > .card + .card { margin-top: 0; }
+.chip.naranja { color: var(--n-vence_hoy); border-color: color-mix(in srgb, var(--n-vence_hoy) 38%, transparent); background: color-mix(in srgb, var(--n-vence_hoy) 11%, transparent); }
+
+.menu {
+  position: fixed; z-index: 70; min-width: 210px; max-width: min(300px, calc(100vw - 16px)); padding: 6px;
+  background: var(--card-solida); border: 1px solid var(--linea-2); border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18), 0 2px 6px rgba(0, 0, 0, 0.08); animation: menu-in 0.12s ease-out;
+}
+@keyframes menu-in { from { opacity: 0; transform: scale(0.97) translateY(-3px); } }
+.menu-tit { font-size: 11.5px; color: var(--tinta-3); padding: 6px 10px 4px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.menu-sep { height: 1px; background: var(--linea); margin: 5px 4px; }
+.menu button {
+  display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: transparent; text-align: left;
+  padding: 7px 10px; border-radius: 9px; font-size: 14px; color: var(--tinta);
+}
+.menu button:hover, .menu button:focus-visible { background: var(--acento-suave); outline: none; }
+.menu button.on { font-weight: 600; }
+.menu button.peligro { color: var(--n-atrasado); }
+.menu .ic { width: 18px; display: inline-grid; place-items: center; color: var(--tinta-3); flex-shrink: 0; }
+.menu .ic svg { width: 15px; height: 15px; }
+.menu .tx { flex: 1; }
+.menu .ok { color: var(--acento); display: inline-grid; }
+.menu .ok svg { width: 14px; height: 14px; }
+.menu .pe { display: block; width: 14px; height: 14px; border-radius: 50%; border: 1.6px solid var(--acento); background: conic-gradient(var(--acento) calc(var(--p) * 360deg), transparent 0); }
+
+.pieza.futura { border-style: dashed; background: transparent; opacity: 0.85; }
+.pieza.futura.entregado { opacity: 1; border-style: solid; }
+details.adelantar { margin-top: 8px; }
+details.adelantar > summary { font-size: 12.5px; padding: 4px 0; }
+
+.area-res { grid-template-columns: auto 1fr auto; cursor: pointer; user-select: none; }
+.area-res .asa { color: var(--tinta-3); display: inline-grid; place-items: center; width: 18px; height: 22px; cursor: grab; touch-action: none; margin-left: -4px; }
+.area-res .asa svg { width: 14px; height: 14px; }
+.area-res .asa:hover { color: var(--tinta); }
+.area-res.arrastrando { position: relative; z-index: 5; box-shadow: var(--sombra); background: var(--card-solida); cursor: grabbing; transition: none; }
+
+.mini.regen { width: 26px; height: 26px; opacity: 0.45; }
+.mini.regen:hover { opacity: 1; }
+.mini.regen svg { width: 14px; height: 14px; }
+
+.pomo-ctrl.oculto { visibility: hidden; }
+.clima { display: flex; align-items: center; justify-content: center; gap: 6px; flex-wrap: wrap; margin-top: 12px; font-size: 13px; color: var(--tinta-2); min-height: 20px; }
+.clima b { font-weight: 600; color: var(--tinta); font-variant-numeric: tabular-nums; }
+.clima .clima-ico { font-size: 16px; }
+
+/* ───────── calendario ───────── */
+.calendario { padding: 18px 16px; }
+.cal-cab, .cal-sem { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-cab span { text-align: center; font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--tinta-3); padding-bottom: 6px; font-weight: 600; }
+.cal-sem { margin-bottom: 4px; position: relative; }
+.cal-sem .dia {
+  min-height: 78px; border: 1px solid var(--linea); background: var(--card-2); border-radius: 12px; padding: 5px 5px 6px;
+  text-align: left; display: flex; flex-direction: column; gap: 3px; overflow: hidden; transition: border-color 0.15s, transform 0.15s; min-width: 0;
+}
+.cal-sem .dia:hover { border-color: var(--acento); }
+.cal-sem .dia .num { font-size: 13px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cal-sem .dia.finde { background: transparent; }
+.cal-sem .dia.fuera { opacity: 0.38; }
+.cal-sem .dia.pasado:not(.hoy) .num { color: var(--tinta-3); }
+.cal-sem .dia.hoy { border-color: var(--acento); box-shadow: inset 0 0 0 1px var(--acento); }
+.cal-sem .dia.hoy .num { color: var(--acento-2); }
+.cal-sem .dia.libre {
+  --l: var(--n-al_dia);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--l) 16%, transparent) 0 6px, color-mix(in srgb, var(--l) 7%, transparent) 6px 12px);
+  border-color: color-mix(in srgb, var(--l) 45%, transparent);
+}
+.cal-sem .dia.vida { background: color-mix(in srgb, var(--n-al_dia) 10%, var(--card-2)); }
+.tag-libre { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--n-al_dia); font-weight: 700; }
+.marcas { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.cm { font-size: 10.5px; line-height: 1.25; padding: 1px 5px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--linea); color: var(--tinta-2); }
+.cm.vence { background: color-mix(in srgb, var(--n-vence_hoy) 18%, transparent); color: var(--n-vence_hoy); font-weight: 600; }
+.cm.vence.hecha { text-decoration: line-through; opacity: 0.6; }
+.cm.show { background: color-mix(in srgb, #a78bcf 18%, transparent); }
+.cm.grabacion { background: color-mix(in srgb, #4fa39a 18%, transparent); }
+.cal-aviso { grid-column: 1 / -1; margin: -1px 0 4px; }
+.sem-aviso { font-size: 11.5px; color: var(--n-vence_hoy); font-weight: 600; padding-left: 4px; }
+.sem-aviso::before { content: '↑ '; }
+.cal-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--tinta-2); }
+.cal-leyenda span { display: inline-flex; align-items: center; gap: 6px; }
+.lg { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
+.lg.libre { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--n-al_dia) 35%, transparent) 0 3px, transparent 3px 6px); border: 1px solid var(--n-al_dia); }
+.lg.vence { background: color-mix(in srgb, var(--n-vence_hoy) 30%, transparent); border: 1px solid var(--n-vence_hoy); }
+.lg.vida { background: color-mix(in srgb, var(--n-al_dia) 14%, transparent); border: 1px solid var(--linea-2); }
+@media (max-width: 600px) {
+  .calendario { padding: 14px 8px; }
+  .cal-cab, .cal-sem { gap: 3px; }
+  .cal-sem .dia { min-height: 58px; padding: 4px 3px; border-radius: 9px; }
+  .cm { font-size: 0; padding: 0; height: 5px; border-radius: 3px; }
+  .cm.vence { background: var(--n-vence_hoy); }
+  .cm.show { background: #a78bcf; }
+  .cm.grabacion { background: #4fa39a; }
+  .tag-libre { font-size: 8.5px; }
+}
