@@ -555,3 +555,19 @@ details.adelantar > summary { font-size: 12.5px; padding: 4px 0; }
   .cm.grabacion { background: #4fa39a; }
   .tag-libre { font-size: 8.5px; }
 }
+
+/* ───────── v6: áreas nuevas, exclusiones, hábitos ───────── */
+.tab.mas { padding: 8px 11px; color: var(--tinta-3); }
+.tab.mas svg { width: 15px; height: 15px; }
+.tab.mas:hover { color: var(--acento-2); border-color: var(--acento); }
+.dias-sem { display: flex; flex-wrap: wrap; gap: 6px; }
+.dias-sem label { cursor: pointer; }
+.dias-sem input { position: absolute; opacity: 0; pointer-events: none; }
+.dias-sem span { display: inline-block; min-width: 46px; text-align: center; padding: 6px 10px; border-radius: 999px; border: 1px solid var(--linea-2); font-size: 13px; color: var(--tinta-2); transition: all 0.15s; }
+.dias-sem input:checked + span { background: var(--acento); border-color: var(--acento); color: #fff; }
+.dias-sem input:focus-visible + span { outline: 2px solid var(--acento); outline-offset: 2px; }
+.chk.libre { border-style: dashed; opacity: 0.45; cursor: default; }
+.check.opcion { align-items: flex-start; margin-top: 4px; }
+.check.opcion input { margin-top: 2px; flex: none; }
+.check.opcion > span { display: grid; gap: 1px; }
+.check.opcion small { font-size: 12px; }

@@ -297,6 +297,36 @@ function progresoTareaAntesDe(t, ms) {
   return Math.min(1, v / t.total);
 }
 
+// ───────────────────────── áreas: exclusiones ─────────────────────────
+// a.excluirMetricas: no suma a las métricas de trabajo (semana, % de hoy, horas, pronóstico). Igual aparece en el plan.
+// a.excluirResumen: no aparece en el resumen del día ni en "Qué hacer hoy" (solo en su pestaña).
+export const areaDe = (estado, id) => (estado.areas || []).find((a) => a.id === id);
+export const cuentaEnMetricas = (estado, id) => !areaDe(estado, id)?.excluirMetricas;
+export const vaAlResumen = (estado, id) => !areaDe(estado, id)?.excluirResumen;
+
+// ───────────────────────── tareas que se repiten (rutinas) ─────────────────────────
+// t.repetir = { dias: [0–6] } (0 = domingo) · t.desde = 'AAAA-MM-DD' · t.hechos = { 'AAAA-MM-DD': ms }.
+// Cada día que toca es una "ocurrencia" (id `${t.id}@AAAA-MM-DD`). Las que pasaron sin hacerse no se arrastran.
+export const DIA_CORTO = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+export const esRepetida = (t) => !!t?.repetir?.dias?.length;
+export const diasRepetir = (t) => [1, 2, 3, 4, 5, 6, 0].filter((d) => t.repetir?.dias?.includes(d)).map((d) => DIA_CORTO[d]).join(' · ');
+export function ocurrencia(t, s) {
+  const ms = t.hechos?.[s];
+  return { ...t, id: `${t.id}@${s}`, base: t.id, fecha: s, hecha: !!ms, hechaEn: ms || null, total: undefined, actual: undefined, hist: undefined, repetida: true };
+}
+export function ocurrencias(estado, desde, hasta) {
+  const out = [];
+  for (const t of vivos(estado.tareas)) {
+    if (!esRepetida(t)) continue;
+    const ini = t.desde || (t.creada ? diaStr(new Date(t.creada)) : '0000-00-00');
+    for (let d = inicioDia(desde); d <= hasta; d = sumarDias(d, 1)) {
+      const s = diaStr(d);
+      if (s >= ini && t.repetir.dias.includes(d.getDay())) out.push(ocurrencia(t, s));
+    }
+  }
+  return out;
+}
+
 // ───────────────────────── análisis completo ─────────────────────────
 export function analizar(estadoIn, cal, ahora = new Date()) {
   const estado = asegurarEstado(estadoIn);
@@ -320,10 +350,16 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
     if (p.lunes > lun) return false;
     return p.etapa !== 'entregado' || ultimoCambio(p) >= lunMs;
   });
-  const tareas = vivos(estado.tareas);
-  const tareasSemana = tareas.filter(
-    (t) => t.fecha && t.fecha <= domS && (!t.hecha || (t.hechaEn || 0) >= lunMs),
-  );
+  const tareas = vivos(estado.tareas).filter((t) => !esRepetida(t));
+  const rutinas = vivos(estado.tareas).filter(esRepetida);
+  // rutinas de esta semana: las de hoy en adelante, y las pasadas solo si se hicieron
+  const ocSemana = ocurrencias(estado, lun, dom).filter((o) => o.fecha >= hoyS || o.hecha);
+  const ocHoy = ocSemana.filter((o) => o.fecha === hoyS);
+  const tareasSemana = [
+    ...tareas.filter((t) => t.fecha && t.fecha <= domS && (!t.hecha || (t.hechaEn || 0) >= lunMs)),
+    ...ocSemana,
+  ];
+  const cuenta = (x) => cuentaEnMetricas(estado, x.area);
 
   const items = [
     ...piezas.map((p) => {
@@ -348,7 +384,7 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
     ...tareas
       .filter((t) => t.fecha && t.fecha > domS && progresoTarea(t) > 0 && (!t.hecha || (t.hechaEn || 0) >= lunMs))
       .map((t) => ({ area: t.area, h: horasTarea(estado, t) * progresoTarea(t) })),
-  ];
+  ].filter(cuenta);
   const ventaja = ventajaItems.reduce((s, i) => s + i.h, 0);
   const adelantadas = futuras.filter((p) => p.etapa === 'entregado').length;
 
@@ -361,13 +397,15 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
   for (let d = new Date(lun); d <= dom; d = sumarDias(d, 1)) capTotal += capacidadDia(estado, eventos, d, null, 'min');
   const transcurrido = capTotal > 0 ? Math.min(1, Math.max(0, 1 - cap8 / capTotal)) : 1;
 
-  const activos = items.filter((i) => !i.bloqueado);
+  // las métricas de la semana solo miran las áreas que cuentan (las personales quedan afuera)
+  const itemsM = items.filter(cuenta);
+  const activos = itemsM.filter((i) => !i.bloqueado);
   const total = activos.reduce((s, i) => s + i.h, 0);
   const hecho = activos.reduce((s, i) => s + i.hecho, 0);
   const necesariasSemana = activos.reduce((s, i) => s + i.resta, 0);
-  const bloqueadas = items.filter((i) => i.bloqueado).map((i) => i.ref);
-  const atrasadas = items.filter((i) => i.atrasada && !i.bloqueado).map((i) => i.ref);
-  const vencidas = items.filter((i) => i.vencida).map((i) => i.ref);
+  const bloqueadas = itemsM.filter((i) => i.bloqueado).map((i) => i.ref);
+  const atrasadas = itemsM.filter((i) => i.atrasada && !i.bloqueado).map((i) => i.ref);
+  const vencidas = itemsM.filter((i) => i.vencida).map((i) => i.ref);
 
   // lo que hay que dejar hecho antes del lunes que viene para cubrir días libres/vacaciones que vienen
   const adelantoNecesario = pron[0]?.antes || 0;
@@ -376,7 +414,7 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
   const txtVentaja = hayVentaja ? ` Ya adelantaste ${fh(ventaja - adelantoNecesario)} de más para las semanas que vienen.` : '';
   const necesarias = necesariasSemana + adelantoFalta;
   const txtAdelanto = adelantoFalta > 0.05 ? ` Incluye ${fh(adelantoFalta)} para adelantar por días libres que vienen.` : '';
-  const venceHoy = items.filter((i) => i.venceHoy && i.resta > 0.01).map((i) => i.ref);
+  const venceHoy = itemsM.filter((i) => i.venceHoy && i.resta > 0.01).map((i) => i.ref);
   let nivel, mensaje;
   if (necesarias < 0.05) {
     if (total === 0 && !hayVentaja) {
@@ -435,15 +473,15 @@ export function analizar(estadoIn, cal, ahora = new Date()) {
     };
   }
 
-  const plan = planDeHoy(estado, eventos, ahora, piezas, tareas, futuras, adelantoFalta);
-  const hechoHoy = calcularHechoHoy(estado, todas, tareas, hoyMs);
-  const restaPlan = plan.filter((p) => !p.extra).reduce((s, p) => s + p.horas, 0);
+  const plan = planDeHoy(estado, eventos, ahora, piezas, [...tareas, ...ocHoy], futuras, adelantoFalta);
+  const hechoHoy = calcularHechoHoy(estado, todas.filter(cuenta), [...tareas, ...ocHoy].filter(cuenta), hoyMs);
+  const restaPlan = plan.filter((p) => !p.extra && !p.aparte).reduce((s, p) => s + p.horas, 0);
   const pctHoy = hechoHoy + restaPlan > 0 ? hechoHoy / (hechoHoy + restaPlan) : 1;
 
   const shows = listaShows(estado, eventos, ahora);
 
   return {
-    ahora, hoyS, lun, dom, eventos, areas, todas, piezas, futuras, tareas, items,
+    ahora, hoyS, lun, dom, eventos, areas, todas, piezas, futuras, tareas, rutinas, ocSemana, ocHoy, items,
     semana: { nivel, mensaje, total, hecho, necesarias, necesariasSemana, adelantoFalta, cap8, cap10, capFinde, transcurrido, ventaja, adelantadas, pct: total ? hecho / total : 1 },
     porArea, bloqueadas, atrasadas, vencidas, venceHoy,
     plan, hechoHoy, pctHoy,
@@ -488,9 +526,15 @@ export function planDeHoy(estado, eventos, ahora, piezas, tareas, futuras = [], 
   const usados = new Set();
   const add = (it) => {
     if (usados.has(it.ref.id)) return;
+    if (!vaAlResumen(estado, it.area)) return; // área fuera del resumen: solo se ve en su pestaña
     usados.add(it.ref.id);
-    it.extra = it.extra || (budget <= 0.01 && !it.urgente);
-    if (!it.extra) budget -= it.horas;
+    if (!cuentaEnMetricas(estado, it.area)) {
+      it.aparte = true; // aparece (ej. "hoy toca ejercicio") pero no usa horas de trabajo
+      it.extra = !!it.extra;
+    } else {
+      it.extra = it.extra || (budget <= 0.01 && !it.urgente);
+      if (!it.extra) budget -= it.horas;
+    }
     plan.push(it);
   };
   const vivasT = tareas.filter((t) => !t.hecha);
@@ -532,7 +576,7 @@ export function planDeHoy(estado, eventos, ahora, piezas, tareas, futuras = [], 
   // 6. adelanto obligatorio (días libres que vienen): repartido en los días que quedan
   if (adelantoFalta > 0.05) {
     let cupo = adelantoFalta / diasRest;
-    const orden = [...futuras].filter((p) => p.etapa !== 'entregado' && !p.bloqueado).sort((a, b) => a.lunes - b.lunes || PESO[b.etapa] - PESO[a.etapa] || a.n - b.n);
+    const orden = [...futuras].filter((p) => p.etapa !== 'entregado' && !p.bloqueado && cuentaEnMetricas(estado, p.area)).sort((a, b) => a.lunes - b.lunes || PESO[b.etapa] - PESO[a.etapa] || a.n - b.n);
     for (const p of orden) {
       if (cupo <= 0.05) break;
       const h = (p.cuota.horas || 1) * (1 - PESO[p.etapa]);
@@ -619,13 +663,15 @@ export const PREP_BASE = ['Repasar el set', 'Promocionar el show', 'Confirmar ho
 export function pronostico(estado, eventos, ahora, semanas = 8) {
   const out = [];
   const base = lunes(ahora);
-  const tareas = vivos(estado.tareas).filter((t) => t.fecha);
+  const cuenta = (x) => cuentaEnMetricas(estado, x.area);
+  const tareas = vivos(estado.tareas).filter((t) => t.fecha && !esRepetida(t) && cuenta(t));
   for (let k = 1; k <= semanas; k++) {
     const w = sumarDias(base, 7 * k), fin = sumarDias(w, 6);
     const ws = diaStr(w), fs = diaStr(fin);
     let carga = 0;
+    for (const o of ocurrencias(estado, w, fin)) if (cuenta(o)) carga += horasTarea(estado, o);
     for (const cu of vivos(estado.cuotas)) {
-      if (cu.activa === false) continue;
+      if (cu.activa === false || !cuenta(cu)) continue;
       if (cu.desde && cu.desde > fs) continue;
       if (cu.hasta && cu.hasta < ws) continue;
       if (semanaPausada(estado, w, cu.area)) continue;

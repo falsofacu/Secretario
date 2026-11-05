@@ -1,5 +1,5 @@
 // app.js — la página del Secretario.
-import * as N from './nucleo.js?v=4';
+import * as N from './nucleo.js?v=6';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -317,6 +317,7 @@ function renderTabs(A) {
         const n = pa?.pendientes || 0;
         out.push(`<button class="tab ${S.tab === a.id ? 'on' : ''}" style="--c:${a.color}" data-a="tab" data-id="${a.id}"><span class="dot"></span>${esc(a.nombre)}${n ? `<span class="num">${n}</span>` : ''}</button>`);
       }
+      out.push(`<button class="tab mas" data-a="nueva-area" title="Nueva área" aria-label="Nueva área">${I.mas}</button>`);
     } else out.push(`<button class="tab ${S.tab === t.id ? 'on' : ''}" data-a="tab" data-id="${t.id}">${t.nombre}</button>`);
   }
   out.push(`<button class="tab plata ${S.tab === 'plata' ? 'on' : ''}" data-a="tab" data-id="plata">Plata</button>`);
@@ -374,9 +375,10 @@ function filaPieza(p, opts = {}) {
 
 function filaTarea(t, opts = {}) {
   const chips = [];
-  if (t.fecha) { const v = vence(t.fecha); chips.push(`<span class="chip ${t.hecha ? '' : v.cls}">${v.txt}</span>`); }
+  if (t.repetida) chips.push(`<span class="chip">↻ ${N.diasRepetir(t)}</span>`);
+  else if (t.fecha) { const v = vence(t.fecha); chips.push(`<span class="chip ${t.hecha ? '' : v.cls}">${v.txt}</span>`); }
   const h = N.horasTarea(S.estado, t);
-  if (!t.hecha) chips.push(`<span>${N.fh(opts.horas ?? h * (1 - N.progresoTarea(t)))}</span>`);
+  if (!t.hecha && !opts.aparte) chips.push(`<span>${N.fh(opts.horas ?? h * (1 - N.progresoTarea(t)))}</span>`);
   if (opts.metaHoy) chips.push(`<span class="chip verde">hoy: ${opts.metaHoy}</span>`);
   if (t.notas) chips.push(`<span>${esc(t.notas.slice(0, 60))}</span>`);
   let contador = '';
@@ -395,7 +397,7 @@ function filaTarea(t, opts = {}) {
 }
 
 function filaPlan(it) {
-  return it.tipo === 'pieza' ? filaPieza(it.ref, { horas: it.horas, extra: it.extra }) : filaTarea(it.ref, { horas: it.horas, extra: it.extra, metaHoy: it.metaHoy });
+  return it.tipo === 'pieza' ? filaPieza(it.ref, { horas: it.horas, extra: it.extra }) : filaTarea(it.ref, { horas: it.horas, extra: it.extra, metaHoy: it.metaHoy, aparte: it.aparte });
 }
 
 function agruparPorArea(items) {
@@ -405,7 +407,7 @@ function agruparPorArea(items) {
     m.get(it.area).push(it);
   }
   return [...m.entries()].map(([id, l]) => `<div class="grupo" style="--c:${area(id).color}">
-    <div class="grupo-tit"><b>${esc(area(id).nombre)}</b><span class="tenue">${N.fh(l.reduce((s, x) => s + x.horas, 0))}</span></div>
+    <div class="grupo-tit"><b>${esc(area(id).nombre)}</b><span class="tenue">${l.some((x) => x.aparte) ? 'no suma a las métricas' : N.fh(l.reduce((s, x) => s + x.horas, 0))}</span></div>
     ${l.map(filaPlan).join('')}</div>`).join('');
 }
 
@@ -460,7 +462,7 @@ function vistaHoy(A) {
         ${b.avisos?.length ? `<ul>${b.avisos.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : ''}
         ${b.frase ? `<div class="frase">${esc(b.frase)}</div>` : ''}` : '<div class="vacio">Todavía no hay resumen de hoy. Se genera a las 7:00, o tocá ↻.</div>'}</div>
       <div class="card">
-        <div class="cab"><h2>Qué hacer hoy</h2><span class="tenue">${plan.length ? `${N.fh(plan.reduce((s, p) => s + p.horas, 0))} planificadas` : ''}</span></div>
+        <div class="cab"><h2>Qué hacer hoy</h2><span class="tenue">${plan.some((p) => !p.aparte) ? `${N.fh(plan.filter((p) => !p.aparte).reduce((s, p) => s + p.horas, 0))} planificadas` : ''}</span></div>
         ${plan.length ? agruparPorArea(plan) : `<div class="vacio">${N.esLaboral(S.estado, A.ahora) ? 'No queda nada planificado para hoy. ¡Bien!' : 'Hoy es día libre. Nada urgente.'}</div>`}
         ${extras.length ? `<details class="plegable"><summary>Si te da el tiempo (${extras.length})</summary>${agruparPorArea(extras)}</details>` : ''}
       </div>
@@ -491,6 +493,16 @@ function vistaArea(A, a) {
   const hace7 = Date.now() - 7 * 864e5;
   const hechas = tareas.filter((t) => t.hecha && (t.hechaEn || 0) > hace7);
   const metas = S.estado.metas.filter((m) => m.area === a.id && !m.borrado);
+  const rutinas = A.rutinas.filter((t) => t.area === a.id);
+  const rutinaHtml = rutinas.map((t) => {
+    const oc = A.ocHoy.find((o) => o.base === t.id);
+    const sem = N.ocurrencias(S.estado, A.lun, A.dom).filter((o) => o.base === t.id);
+    const hechas = sem.filter((o) => o.hecha).length;
+    return `<div class="fila ${oc?.hecha ? 'hecha' : ''}" data-ctx="tarea" data-id="${esc(oc ? oc.id : t.id)}">
+      ${oc ? `<button class="chk ${oc.hecha ? 'on' : ''}" data-a="hecha" data-id="${esc(oc.id)}" title="${oc.hecha ? 'Hecho hoy' : 'Marcar hecho hoy'}">${oc.hecha ? I.check : ''}</button>` : '<span class="chk libre" title="Hoy no toca"></span>'}
+      <div class="txt"><b>${esc(t.titulo)}</b><div class="meta"><span class="chip ${oc && !oc.hecha ? 'hoy' : ''}">${oc ? 'hoy toca' : 'hoy no toca'}</span><span>↻ ${N.diasRepetir(t)}</span><span>${hechas} de ${sem.length} esta semana</span></div></div>
+      <button class="mini" data-a="menu-tarea" data-id="${esc(t.id)}" title="Opciones">${I.puntos}</button></div>`;
+  }).join('');
 
   const cuotaHtml = cuotas.map((c) => {
     const ps = piezas.filter((p) => p.cuota.id === c.id);
@@ -510,15 +522,17 @@ function vistaArea(A, a) {
   if (evs.length) extra.push(`<div class="card"><div class="cab"><h2>${a.id === 'agencia' ? 'Próximas grabaciones' : 'En el calendario'}</h2></div>${agenda(groupByDay(evs))}</div>`);
 
   return `<div class="card" style="margin-bottom:14px">
-      <div class="cab"><div><h2 style="font-family:var(--fuente-display);font-weight:400;font-size:26px;display:flex;align-items:center;gap:6px">${esc(a.nombre)}<button class="mini" data-a="editar-area" data-id="${a.id}" title="Renombrar">${I.lapiz}</button></h2>${a.nota ? `<div class="tenue">${esc(a.nota)}</div>` : ''}</div>${nivelHtml(pa.nivel)}</div>
+      <div class="cab"><div><h2 style="font-family:var(--fuente-display);font-weight:400;font-size:26px;display:flex;align-items:center;gap:6px">${esc(a.nombre)}<button class="mini" data-a="editar-area" data-id="${a.id}" title="Editar área">${I.lapiz}</button></h2>${a.nota ? `<div class="tenue">${esc(a.nota)}</div>` : ''}${a.excluirMetricas || a.excluirResumen ? `<div class="meta" style="margin-top:6px">${a.excluirMetricas ? '<span class="chip">no suma a las métricas</span>' : ''}${a.excluirResumen ? '<span class="chip">fuera del resumen del día</span>' : ''}</div>` : ''}</div>${nivelHtml(pa.nivel)}</div>
       <div class="barra" style="--c:${a.color}"><i style="width:${pct(pa.progreso)}%"></i></div>
       <div class="tenue" style="margin-top:8px">${pa.total ? `${pct(pa.progreso)}% de lo de esta semana · ${N.fh(pa.total - pa.hecho)} pendientes` : 'Nada con fecha para esta semana.'}${pa.bloqueadas ? ` · ${pa.bloqueadas} esperando material` : ''}</div>
     </div>
     <div class="grid2">
       <div class="col">
         ${cuotas.length ? `<div class="card"><div class="cab"><h2>Cuotas de la semana</h2><span class="tenue">vencen el domingo</span></div>${cuotaHtml}</div>` : ''}
-        ${a.id === 'standup' && !cuotas.length ? `<div class="card"><div class="cab"><h2>Metas semanales de stand-up</h2></div><div class="vacio">Opcional. Por ejemplo: escribir material nuevo una vez por semana.</div><button class="btn chico" data-a="nueva-cuota" data-area="standup">${I.mas} Activar una meta semanal</button></div>` : ''}
-        <div class="card"><div class="cab"><h2>Tareas</h2></div>
+        ${rutinas.length || a.excluirMetricas ? `<div class="card"><div class="cab"><h2>Rutina</h2><button class="btn chico" data-a="nueva-rutina" data-area="${a.id}">${I.mas} Hábito</button></div>
+          ${rutinaHtml || '<div class="vacio">Cosas que se repiten ciertos días: ejercicio, lectura… Te aparecen en <i>Hoy</i> el día que tocan.</div>'}</div>` : ''}
+        ${a.id === 'standup' && !cuotas.length ?`<div class="card"><div class="cab"><h2>Metas semanales de stand-up</h2></div><div class="vacio">Opcional. Por ejemplo: escribir material nuevo una vez por semana.</div><button class="btn chico" data-a="nueva-cuota" data-area="standup">${I.mas} Activar una meta semanal</button></div>` : ''}
+        <div class="card"><div class="cab"><h2>Tareas</h2>${rutinas.length || a.excluirMetricas ? '' : `<button class="btn chico" data-a="nueva-rutina" data-area="${a.id}" title="Algo que se repite ciertos días">↻ Que se repite</button>`}</div>
           ${conFecha.map((t) => filaTarea(t)).join('')}
           ${sinFecha.length ? `<div class="etiqueta" style="margin-top:${conFecha.length ? 14 : 0}px">Sin apuro</div>${sinFecha.map((t) => filaTarea(t)).join('')}` : ''}
           ${!conFecha.length && !sinFecha.length ? '<div class="vacio">Sin tareas. Agregá una abajo.</div>' : ''}
@@ -762,19 +776,23 @@ function hojaPieza(id) {
       <div class="der"><button class="btn" data-a="cerrar">Cerrar</button><button class="btn primario" data-a="guardar-pieza" data-id="${esc(id)}">Guardar</button></div></div>`);
 }
 
-function hojaTarea(t, areaId, fecha) {
+function hojaTarea(t, areaId, fecha, rutina = false) {
   const nueva = !t;
-  t = t || { id: N.nuevoId('t'), area: S.estado.areas.some((a) => a.id === areaId) ? areaId : 'gamedev', titulo: '', fecha: fecha || null, hecha: false };
-  abrirHoja(`<h2>${nueva ? 'Nueva tarea' : 'Editar tarea'}</h2>
+  t = t || { id: N.nuevoId('t'), area: S.A.areas.some((a) => a.id === areaId) ? areaId : 'gamedev', titulo: '', fecha: fecha || null, hecha: false };
+  const rep = N.esRepetida(t) || rutina;
+  const dias = t.repetir?.dias || [];
+  abrirHoja(`<h2>${nueva ? (rutina ? 'Nuevo hábito' : 'Nueva tarea') : 'Editar tarea'}</h2>
     <form data-form="editar-tarea" data-id="${esc(t.id)}" data-nueva="${nueva ? 1 : ''}" class="campos" style="margin-top:14px">
-      <label class="campo"><span>Qué hay que hacer</span><input type="text" name="titulo" value="${esc(t.titulo)}" required></label>
+      <label class="campo"><span>Qué hay que hacer</span><input type="text" name="titulo" value="${esc(t.titulo)}" placeholder="${rutina ? 'Ej: Ejercicio, Leer 30 min' : ''}" required></label>
+      <div class="campo"><span>Se repite (opcional)</span><div class="dias-sem">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label><input type="checkbox" name="rep" value="${d}" ${dias.includes(d) ? 'checked' : ''}><span>${N.DIA_CORTO[d]}</span></label>`).join('')}</div>
+        <small class="tenue">${rep ? 'Marcá los días que toca. Te aparece en Hoy esos días; si un día no lo hacés, no se arrastra.' : 'Si marcás días, se vuelve un hábito (sin fecha límite).'}</small></div>
       <div class="campos-2">
-        <label class="campo"><span>Área</span><select name="area">${S.estado.areas.map((a) => `<option value="${a.id}" ${a.id === t.area ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
-        <label class="campo"><span>Fecha límite</span><input type="date" name="fecha" value="${esc(t.fecha || '')}"></label>
+        <label class="campo"><span>Área</span><select name="area">${S.A.areas.map((a) => `<option value="${a.id}" ${a.id === t.area ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
+        ${rep ? '' : `<label class="campo"><span>Fecha límite</span><input type="date" name="fecha" value="${esc(t.fecha || '')}"></label>`}
         <label class="campo"><span>Horas estimadas</span><input type="number" name="horas" step="0.25" min="0" value="${esc(t.horas ?? '')}" placeholder="${S.estado.config.horasTarea}"></label>
-        <label class="campo"><span>Cantidad (contador)</span><input type="number" name="total" min="0" value="${esc(t.total ?? '')}" placeholder="ej: 200"></label>
+        ${rep ? '' : `<label class="campo"><span>Cantidad (contador)</span><input type="number" name="total" min="0" value="${esc(t.total ?? '')}" placeholder="ej: 200"></label>`}
       </div>
-      <label class="campo"><span>Prioridad (para las sin fecha)</span><select name="prioridad">${[[0, 'Normal'], [1, 'Alta'], [2, 'Muy alta']].map(([v, n]) => `<option value="${v}" ${(t.prioridad || 0) == v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+      ${rep ? '' : `<label class="campo"><span>Prioridad (para las sin fecha)</span><select name="prioridad">${[[0, 'Normal'], [1, 'Alta'], [2, 'Muy alta']].map(([v, n]) => `<option value="${v}" ${(t.prioridad || 0) == v ? 'selected' : ''}>${n}</option>`).join('')}</select></label>`}
       <label class="campo"><span>Notas</span><textarea name="notas">${esc(t.notas || '')}</textarea></label>
       <div class="pie">${nueva ? '<span></span>' : `<button class="btn peligro" type="button" data-a="borrar-tarea" data-id="${esc(t.id)}">${I.basura} Borrar</button>`}
         <div class="der"><button class="btn" type="button" data-a="cerrar">Cancelar</button><button class="btn primario" type="submit">Guardar</button></div></div>
@@ -788,7 +806,7 @@ function hojaMeta(m, areaId) {
     <form data-form="editar-meta" data-id="${esc(m.id)}" data-nueva="${nueva ? 1 : ''}" class="campos" style="margin-top:14px">
       <label class="campo"><span>Meta</span><input type="text" name="titulo" value="${esc(m.titulo)}" required></label>
       <div class="campos-2">
-        <label class="campo"><span>Área</span><select name="area">${S.estado.areas.map((a) => `<option value="${a.id}" ${a.id === m.area ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
+        <label class="campo"><span>Área</span><select name="area">${S.A.areas.map((a) => `<option value="${a.id}" ${a.id === m.area ? 'selected' : ''}>${esc(a.nombre)}</option>`).join('')}</select></label>
         <label class="campo"><span>Para cuándo (texto libre)</span><input type="text" name="objetivo" value="${esc(m.objetivo || '')}" placeholder="ej: marzo 2027"></label>
       </div>
       ${nueva ? '<label class="campo"><span>Pasos (uno por línea, opcional)</span><textarea name="pasos"></textarea></label>' : `<label class="check"><input type="checkbox" name="hecha" ${m.hecha ? 'checked' : ''}> Meta cumplida</label>`}
@@ -863,7 +881,7 @@ function hojaMov() {
     <form data-form="nuevo-mov" class="campos" style="margin-top:14px">
       <div class="campos-2">
         <label class="campo"><span>Tipo</span><select name="tipo"><option value="cobro">Cobro (me pagaron)</option><option value="extra">Trabajo extra (flyer, web…)</option></select></label>
-        <label class="campo"><span>Área</span><select name="area">${S.estado.areas.map((a) => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('')}</select></label>
+        <label class="campo"><span>Área</span><select name="area">${S.A.areas.map((a) => `<option value="${a.id}">${esc(a.nombre)}</option>`).join('')}</select></label>
         <label class="campo"><span>Monto</span><input type="number" name="monto" min="0" required></label>
         <label class="campo"><span>Fecha</span><input type="date" name="fecha" value="${N.diaStr(new Date())}" required></label>
       </div>
@@ -982,8 +1000,19 @@ function moverTarea(id, fecha, aviso) {
   mutar((e) => { const x = e.tareas.find((y) => y.id === id); x.fecha = fecha; x.u = ahoraMs(); }, aviso);
 }
 function menuTarea(id, ancla) {
-  const t = S.estado.tareas.find((x) => x.id === id);
+  const [baseId, fechaOc] = id.split('@');
+  const t = S.estado.tareas.find((x) => x.id === baseId);
   if (!t) return;
+  if (N.esRepetida(t)) {
+    const hoyS = N.diaStr(new Date());
+    const oc = fechaOc || (t.repetir.dias.includes(new Date().getDay()) ? hoyS : null);
+    return abrirMenu(ancla, [
+      { titulo: `${t.titulo} · ↻ ${N.diasRepetir(t)}` },
+      ...(oc ? [{ txt: t.hechos?.[oc] ? 'Desmarcar hoy' : 'Hecho hoy', icono: I.check, fn: () => ACC.hecha({ dataset: { id: `${t.id}@${oc}` } }) }, '-'] : []),
+      { txt: 'Editar…', icono: I.lapiz, fn: () => hojaTarea(t) },
+      { txt: 'Borrar hábito', icono: I.basura, peligro: true, fn: () => mutar((e) => { const x = e.tareas.find((y) => y.id === t.id); x.borrado = true; x.u = ahoraMs(); }, 'Hábito borrado') },
+    ]);
+  }
   const hoy = new Date();
   const viernes = N.sumarDias(N.lunes(hoy), 4);
   abrirMenu(ancla, [
@@ -1000,18 +1029,33 @@ function menuTarea(id, ancla) {
   ]);
 }
 
+const COLORES_AREA = ['#6aa86f', '#d97a8c', '#5fa3c9', '#c9925a', '#9a8fd1', '#b5a642', '#5bb3a8', '#cf7a5c'];
 function hojaArea(id) {
-  const a = S.estado.areas.find((x) => x.id === id);
-  abrirHoja(`<h2>Renombrar</h2>
-    <form data-form="editar-area" data-id="${esc(id)}" class="campos" style="margin-top:14px">
-      <label class="campo"><span>Nombre</span><input type="text" name="nombre" value="${esc(a.nombre)}" required></label>
+  const nueva = !id;
+  const usados = new Set(S.estado.areas.filter((x) => !x.borrado).map((x) => x.color));
+  const a = nueva ? { nombre: '', corto: '', color: COLORES_AREA.find((c) => !usados.has(c)) || '#6aa86f', nota: '' } : S.estado.areas.find((x) => x.id === id);
+  abrirHoja(`<h2>${nueva ? 'Nueva área' : 'Editar área'}</h2>
+    <form data-form="editar-area" data-id="${esc(id || '')}" class="campos" style="margin-top:14px">
+      <label class="campo"><span>Nombre</span><input type="text" name="nombre" value="${esc(a.nombre)}" placeholder="${nueva ? 'Ej: Personal' : ''}" required></label>
       <div class="campos-2">
         <label class="campo"><span>Nombre corto (para etiquetas)</span><input type="text" name="corto" value="${esc(a.corto || '')}"></label>
         <label class="campo"><span>Color</span><input type="color" name="color" value="${esc(a.color)}" style="height:42px;width:80px;padding:4px"></label>
       </div>
-      <label class="campo"><span>Nota</span><input type="text" name="nota" value="${esc(a.nota || '')}"></label>
-      <div class="pie"><span></span><div class="der"><button class="btn" type="button" data-a="cerrar">Cancelar</button><button class="btn primario" type="submit">Guardar</button></div></div>
+      <label class="campo"><span>Nota</span><input type="text" name="nota" value="${esc(a.nota || '')}" placeholder="${nueva ? 'Ej: ejercicio, lectura, rutina' : ''}"></label>
+      <div class="campo"><span>Excluir</span>
+        <label class="check opcion"><input type="checkbox" name="excluirMetricas" ${a.excluirMetricas ? 'checked' : ''}><span>De las métricas de trabajo<small class="tenue">No suma ni resta al % de la semana, a las horas ni al estado. Igual te avisa en Hoy.</small></span></label>
+        <label class="check opcion"><input type="checkbox" name="excluirResumen" ${a.excluirResumen ? 'checked' : ''}><span>Del resumen del día<small class="tenue">No aparece en el resumen ni en «Qué hacer hoy», solo en su pestaña.</small></span></label>
+      </div>
+      <div class="pie">${nueva ? '<span></span>' : `<button class="btn peligro" type="button" data-a="borrar-area" data-id="${esc(id)}">${I.basura} Borrar área</button>`}
+        <div class="der"><button class="btn" type="button" data-a="cerrar">Cancelar</button><button class="btn primario" type="submit">${nueva ? 'Crear' : 'Guardar'}</button></div></div>
     </form>`);
+}
+function idArea(nombre) {
+  let base = nombre.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'area';
+  if (['hoy', 'calendario', 'metas', 'vida', 'plata'].includes(base)) base += '-area';
+  let id = base, n = 2;
+  while (S.estado.areas.some((x) => x.id === id)) id = `${base}-${n++}`;
+  return id;
 }
 
 const horaDe = (iso) => { const d = new Date(iso); return `${N.pad(d.getHours())}:${N.pad(d.getMinutes())}`; };
@@ -1154,6 +1198,19 @@ const ACC = {
   dia(el) { menuDia(el.dataset.dia, el); },
   mes(el) { S.mesCal = el.dataset.mes || null; render(); },
   'editar-area'(el) { hojaArea(el.dataset.id); },
+  'nueva-area'() { hojaArea(null); },
+  'borrar-area'(el) {
+    const id = el.dataset.id;
+    const a = S.estado.areas.find((x) => x.id === id);
+    if (!confirm(`¿Borrar el área "${a.nombre}"? También se ocultan sus tareas, hábitos, cuotas y metas.`)) return;
+    mutar((e) => {
+      const t = ahoraMs();
+      for (const k of ['areas', 'tareas', 'cuotas', 'metas']) for (const x of e[k]) if ((k === 'areas' ? x.id : x.area) === id) { x.borrado = true; x.u = t; }
+    }, 'Área borrada');
+    if (S.tab === id) { S.tab = 'hoy'; ls.set('sec.tab', 'hoy'); render(); }
+    cerrarHoja();
+  },
+  'nueva-rutina'(el) { hojaTarea(null, el.dataset.area, null, true); },
   'menu-tarea'(el) { menuTarea(el.dataset.id, el); },
   avanzar(el) { const p = buscarPieza(el.dataset.id); if (p) setEtapa(p.id, N.siguienteEtapa(p)); },
   entregar(el) { const p = buscarPieza(el.dataset.id); if (p) setEtapa(p.id, p.etapa === 'entregado' ? (p.cuota.simple ? 'pendiente' : 'editado') : 'entregado'); },
@@ -1176,11 +1233,17 @@ const ACC = {
     cerrarHoja();
   },
   hecha(el) {
-    const t = S.estado.tareas.find((x) => x.id === el.dataset.id);
-    const ya = t.hecha;
+    const [baseId, fecha] = el.dataset.id.split('@'); // `id@AAAA-MM-DD` = un día de un hábito
+    const t = S.estado.tareas.find((x) => x.id === baseId);
+    if (!t) return;
+    const ya = fecha ? !!t.hechos?.[fecha] : t.hecha;
     mutar((e) => {
       const x = e.tareas.find((y) => y.id === t.id);
-      x.hecha = !ya; x.hechaEn = !ya ? ahoraMs() : null; x.u = ahoraMs();
+      if (fecha) {
+        x.hechos = { ...(x.hechos || {}) };
+        if (ya) delete x.hechos[fecha]; else x.hechos[fecha] = ahoraMs();
+      } else { x.hecha = !ya; x.hechaEn = !ya ? ahoraMs() : null; }
+      x.u = ahoraMs();
     }, !ya ? CELEBRA[Math.floor(Math.random() * CELEBRA.length)] : null);
     if (!ya) $('#anillo-semana')?.classList.add('pulso');
   },
@@ -1283,13 +1346,15 @@ const FORM = {
   },
   'editar-tarea'(f, fd) {
     const id = f.dataset.id;
+    const rep = fd.getAll('rep').map(Number).sort();
     const datos = {
-      titulo: fd.get('titulo').trim(), area: fd.get('area'), fecha: fd.get('fecha') || null,
-      horas: fd.get('horas') ? Number(fd.get('horas')) : undefined, total: fd.get('total') ? Number(fd.get('total')) : undefined,
-      prioridad: Number(fd.get('prioridad')) || 0, notas: fd.get('notas').trim(), u: ahoraMs(),
+      titulo: fd.get('titulo').trim(), area: fd.get('area'), fecha: rep.length ? null : fd.get('fecha') || null,
+      horas: fd.get('horas') ? Number(fd.get('horas')) : undefined, total: !rep.length && fd.get('total') ? Number(fd.get('total')) : undefined,
+      prioridad: Number(fd.get('prioridad')) || 0, notas: fd.get('notas').trim(), repetir: rep.length ? { dias: rep } : undefined, u: ahoraMs(),
     };
     mutar((e) => {
       const x = e.tareas.find((y) => y.id === id);
+      if (rep.length && !x?.desde) datos.desde = N.diaStr(new Date());
       if (x) Object.assign(x, datos);
       else e.tareas.push({ id, ...datos, hecha: false, creada: ahoraMs(), actual: datos.total ? 0 : undefined });
     });
@@ -1334,15 +1399,24 @@ const FORM = {
     hojaShow(clave);
   },
   'editar-area'(f, fd) {
-    const id = f.dataset.id;
+    const nombre = fd.get('nombre').trim();
+    if (!nombre && !f.dataset.id) return;
+    const id = f.dataset.id || idArea(nombre);
     mutar((e) => {
-      const a = e.areas.find((x) => x.id === id);
-      a.nombre = fd.get('nombre').trim() || a.nombre;
+      let a = e.areas.find((x) => x.id === id);
+      if (!a) {
+        a = { id, orden: Math.max(-1, ...e.areas.filter((x) => !x.borrado).map((x) => x.orden ?? 0)) + 1 };
+        e.areas.push(a);
+      }
+      a.nombre = nombre || a.nombre;
       a.corto = fd.get('corto').trim() || a.nombre;
       a.color = fd.get('color');
       a.nota = fd.get('nota').trim();
+      a.excluirMetricas = !!fd.get('excluirMetricas');
+      a.excluirResumen = !!fd.get('excluirResumen');
       a.u = ahoraMs();
-    }, 'Guardado');
+    }, f.dataset.id ? 'Guardado' : 'Área creada');
+    if (!f.dataset.id) { S.tab = id; ls.set('sec.tab', id); render(); }
     cerrarHoja();
   },
   'nueva-cuota'(f, fd) {
