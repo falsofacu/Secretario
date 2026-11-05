@@ -196,8 +196,8 @@ function vence(s) {
   const n = N.diasEntre(new Date(), N.parseDia(s));
   if (n < -1) return { txt: `venció hace ${-n} días`, cls: 'rojo' };
   if (n === -1) return { txt: 'venció ayer', cls: 'rojo' };
-  if (n === 0) return { txt: 'vence hoy', cls: 'naranja' };
-  if (n === 1) return { txt: 'mañana', cls: 'ambar' };
+  if (n === 0) return { txt: 'vence hoy', cls: 'hoy' };
+  if (n === 1) return { txt: 'mañana', cls: '' };
   if (n < 7) return { txt: fechaCorta(s), cls: '' };
   return { txt: fechaCorta(s), cls: '' };
 }
@@ -362,7 +362,7 @@ function filaPieza(p, opts = {}) {
   if (p.atrasada && p.etapa !== 'entregado') chips.push(`<span class="chip rojo">de la semana ${semNum(p.semana)}</span>`);
   if (p.bloqueado) chips.push(`<span class="chip ambar">esperando material</span>`);
   if (p.futura) chips.push(`<span class="chip verde">adelanto · semana ${semNum(p.semana)}</span>`);
-  else if (!p.atrasada && p.etapa !== 'entregado' && !p.bloqueado && S.A && S.A.hoyS === N.diaStr(S.A.dom)) chips.push('<span class="chip naranja">vence hoy</span>');
+  else if (!p.atrasada && p.etapa !== 'entregado' && !p.bloqueado && S.A && S.A.hoyS === N.diaStr(S.A.dom)) chips.push('<span class="chip hoy">vence hoy</span>');
   const hecha = p.etapa === 'entregado';
   return `<div class="fila ${hecha ? 'hecha' : ''} ${opts.extra ? 'extra' : ''}" data-ctx="pieza" data-id="${esc(p.id)}">
     <button class="chk ${hecha ? 'on' : ''}" data-a="entregar" data-id="${esc(p.id)}" title="${hecha ? 'Entregado' : 'Marcar entregado'}">${hecha ? I.check : ''}</button>

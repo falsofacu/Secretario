@@ -16,7 +16,8 @@
   --n-adelantado: #4c9a76;
   --n-al_dia: #5a86b2;
   --n-en_riesgo: #cf9433;
-  --n-vence_hoy: #e0743a;
+  --n-vence_hoy: #3f8bab;
+  --naranja: #e0743a; /* avisos de "adelantar" y vencimientos del calendario */
   --n-atrasado: #c6604f;
   --n-libre: #97a39c;
   --h1: 150; --h2: 30; --h3: 250;
@@ -48,7 +49,8 @@
     --n-adelantado: #6fc49c;
     --n-al_dia: #7eaad6;
     --n-en_riesgo: #e2b15c;
-    --n-vence_hoy: #f2955c;
+    --n-vence_hoy: #74b6d3;
+    --naranja: #f2955c;
     --n-atrasado: #e0806f;
     --n-libre: #7f8d86;
     --blob-1: hsl(var(--h1) 42% 16%);
@@ -75,7 +77,8 @@
   --n-adelantado: #6fc49c;
   --n-al_dia: #7eaad6;
   --n-en_riesgo: #e2b15c;
-    --n-vence_hoy: #f2955c;
+  --n-vence_hoy: #74b6d3;
+  --naranja: #f2955c;
   --n-atrasado: #e0806f;
   --n-libre: #7f8d86;
   --blob-1: hsl(var(--h1) 42% 16%);
@@ -312,6 +315,7 @@ a { color: var(--acento-2); }
 .chip.rojo { color: var(--n-atrasado); border-color: color-mix(in srgb, var(--n-atrasado) 35%, transparent); background: color-mix(in srgb, var(--n-atrasado) 10%, transparent); }
 .chip.ambar { color: var(--n-en_riesgo); border-color: color-mix(in srgb, var(--n-en_riesgo) 35%, transparent); background: color-mix(in srgb, var(--n-en_riesgo) 10%, transparent); }
 .chip.verde { color: var(--n-adelantado); border-color: color-mix(in srgb, var(--n-adelantado) 35%, transparent); }
+.chip.hoy { color: var(--n-vence_hoy); border-color: color-mix(in srgb, var(--n-vence_hoy) 35%, transparent); background: color-mix(in srgb, var(--n-vence_hoy) 10%, transparent); }
 
 .barra { height: 7px; border-radius: 99px; background: var(--linea); overflow: hidden; }
 .barra i { display: block; height: 100%; border-radius: 99px; background: var(--c, var(--acento)); transition: width 1s cubic-bezier(.2,.8,.2,1); }
@@ -459,7 +463,7 @@ details.plegable[open] > summary::before { transform: rotate(90deg); }
 
 /* ───────── v4: menú rápido, adelantos, orden, clima ───────── */
 .hero > .card + .card { margin-top: 0; }
-.chip.naranja { color: var(--n-vence_hoy); border-color: color-mix(in srgb, var(--n-vence_hoy) 38%, transparent); background: color-mix(in srgb, var(--n-vence_hoy) 11%, transparent); }
+.chip.naranja { color: var(--naranja); border-color: color-mix(in srgb, var(--naranja) 38%, transparent); background: color-mix(in srgb, var(--naranja) 11%, transparent); }
 
 .menu {
   position: fixed; z-index: 70; min-width: 210px; max-width: min(300px, calc(100vw - 16px)); padding: 6px;
@@ -528,25 +532,25 @@ details.adelantar > summary { font-size: 12.5px; padding: 4px 0; }
 .tag-libre { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--n-al_dia); font-weight: 700; }
 .marcas { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .cm { font-size: 10.5px; line-height: 1.25; padding: 1px 5px; border-radius: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; background: var(--linea); color: var(--tinta-2); }
-.cm.vence { background: color-mix(in srgb, var(--n-vence_hoy) 18%, transparent); color: var(--n-vence_hoy); font-weight: 600; }
+.cm.vence { background: color-mix(in srgb, var(--naranja) 18%, transparent); color: var(--naranja); font-weight: 600; }
 .cm.vence.hecha { text-decoration: line-through; opacity: 0.6; }
 .cm.show { background: color-mix(in srgb, #a78bcf 18%, transparent); }
 .cm.grabacion { background: color-mix(in srgb, #4fa39a 18%, transparent); }
 .cal-aviso { grid-column: 1 / -1; margin: -1px 0 4px; }
-.sem-aviso { font-size: 11.5px; color: var(--n-vence_hoy); font-weight: 600; padding-left: 4px; }
+.sem-aviso { font-size: 11.5px; color: var(--naranja); font-weight: 600; padding-left: 4px; }
 .sem-aviso::before { content: '↑ '; }
 .cal-leyenda { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 12px; font-size: 12px; color: var(--tinta-2); }
 .cal-leyenda span { display: inline-flex; align-items: center; gap: 6px; }
 .lg { width: 14px; height: 14px; border-radius: 4px; display: inline-block; }
 .lg.libre { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--n-al_dia) 35%, transparent) 0 3px, transparent 3px 6px); border: 1px solid var(--n-al_dia); }
-.lg.vence { background: color-mix(in srgb, var(--n-vence_hoy) 30%, transparent); border: 1px solid var(--n-vence_hoy); }
+.lg.vence { background: color-mix(in srgb, var(--naranja) 30%, transparent); border: 1px solid var(--naranja); }
 .lg.vida { background: color-mix(in srgb, var(--n-al_dia) 14%, transparent); border: 1px solid var(--linea-2); }
 @media (max-width: 600px) {
   .calendario { padding: 14px 8px; }
   .cal-cab, .cal-sem { gap: 3px; }
   .cal-sem .dia { min-height: 58px; padding: 4px 3px; border-radius: 9px; }
   .cm { font-size: 0; padding: 0; height: 5px; border-radius: 3px; }
-  .cm.vence { background: var(--n-vence_hoy); }
+  .cm.vence { background: var(--naranja); }
   .cm.show { background: #a78bcf; }
   .cm.grabacion { background: #4fa39a; }
   .tag-libre { font-size: 8.5px; }
