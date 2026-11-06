@@ -444,11 +444,28 @@ function vistaHoy(A) {
   if (A.atrasadas.length) alertas.push(`<div class="fila"><span class="chip rojo">${A.atrasadas.length}</span><div class="txt">piezas arrastradas de semanas anteriores</div></div>`);
   if (A.vencidas.length) alertas.push(`<div class="fila"><span class="chip rojo">${A.vencidas.length}</span><div class="txt">tareas vencidas</div></div>`);
   for (const p of A.bloqueadas) alertas.push(`<div class="fila"><span class="chip ambar">espera</span><div class="txt">${esc(area(p.area).corto)} · ${esc(nombrePieza(p))} <span class="tenue">sin material</span></div></div>`);
-  for (const v of A.vidaProxima) alertas.push(`<div class="fila"><span class="chip">${N.diasEntre(A.ahora, N.parseDia(v.desde))} días</span><div class="txt">${emojiVida(v.tipo)} ${esc(v.titulo)} <span class="tenue">desde el ${fechaCorta(v.desde)}</span></div></div>`);
-  if (A.adelantoFalta > 0.05) alertas.push(`<div class="fila"><span class="chip naranja">adelantar</span><div class="txt">Esta semana tenés que dejar hechas <b>${N.fh(A.adelantoFalta)}</b> de la que viene, por días libres o vacaciones. Ya están en el plan.</div></div>`);
-  for (const w of A.pronostico.filter((w) => w.carga > w.cap + 0.05).slice(0, 3)) {
-    const motivo = w.libres.length ? `${w.libres.length} día${w.libres.length > 1 ? 's' : ''} libre${w.libres.length > 1 ? 's' : ''}` : w.vida.length ? esc(w.vida.join(', ')) : 'poco tiempo';
-    alertas.push(`<div class="fila"><span class="chip ${w.carga > w.capMax ? 'rojo' : 'ambar'}">sem ${semNum(w.semana)}</span><div class="txt">Semana del ${fechaCorta(N.diaStr(w.lunes))} (${motivo}): ${N.fh(w.carga)} de trabajo y ${N.fh(w.cap)} disponibles. Hay que llegar con ${N.fh(w.carga - w.cap)} adelantadas.</div></div>`);
+  if (A.adelantoFalta > 0.05) alertas.push(`<div class="fila"><span class="chip naranja">adelantar</span><div class="txt">Esta semana tenés que dejar hechas <strong>${N.fh(A.adelantoFalta)}</strong> de la que viene, por días libres o vacaciones. Ya están en el plan.</div></div>`);
+
+  // "Lo que se viene": eventos y semanas futuras, solo informativo. Si una semana no da por un evento de vida,
+  // el faltante va en la fila de ese evento.
+  const proximos = [];
+  const faltaPorVida = new Map();
+  const semanasSueltas = [];
+  for (const w of A.pronostico.filter((w) => w.carga > w.cap + 0.05)) {
+    if (w.vida.length) faltaPorVida.set(w.vida[0], (faltaPorVida.get(w.vida[0]) || 0) + (w.carga - w.cap));
+    else semanasSueltas.push(w);
+  }
+  const adelantar = (h) => `<div class="meta">Antes de esa fecha, dejá adelantadas ${N.fh(h)} de trabajo.</div>`;
+  for (const v of A.vidaProxima) {
+    const n = N.diasEntre(A.ahora, N.parseDia(v.desde));
+    const falta = faltaPorVida.get(v.titulo) || 0;
+    faltaPorVida.delete(v.titulo);
+    proximos.push(`<div class="fila"><span class="chip">en ${n} día${n === 1 ? '' : 's'}</span><div class="txt">${emojiVida(v.tipo)} ${esc(v.titulo)} <span class="tenue">desde el ${fechaCorta(v.desde)}</span>${falta > 0.05 ? adelantar(falta) : ''}</div></div>`);
+  }
+  for (const [titulo, falta] of faltaPorVida) proximos.push(`<div class="fila"><span class="chip">más adelante</span><div class="txt">${esc(titulo)}${adelantar(falta)}</div></div>`);
+  for (const w of semanasSueltas.slice(0, 3)) {
+    const motivo = w.libres.length ? `${w.libres.length} día${w.libres.length > 1 ? 's' : ''} libre${w.libres.length > 1 ? 's' : ''}` : 'poco tiempo';
+    proximos.push(`<div class="fila"><span class="chip">sem ${semNum(w.semana)}</span><div class="txt">Semana del ${fechaCorta(N.diaStr(w.lunes))} <span class="tenue">(${motivo})</span>${adelantar(w.carga - w.cap)}</div></div>`);
   }
 
   return `${partes.join('')}
@@ -469,6 +486,7 @@ function vistaHoy(A) {
     </div>
     <div class="col">
       ${alertas.length ? `<div class="card"><div class="cab"><h2>Ojo con esto</h2></div>${alertas.join('')}</div>` : ''}
+      ${proximos.length ? `<div class="card"><div class="cab"><h2>Lo que se viene</h2></div>${proximos.join('')}</div>` : ''}
       <div class="card"><div class="cab"><h2>Agenda</h2><span class="tenue">${S.calVivo ? 'en vivo' : S.cal?.actualizado ? `al ${fechaCorta(S.cal.actualizado.slice(0, 10))}` : ''}</span></div>
         ${agenda([['Hoy', A.hoyEventos], ['Mañana', A.mananaEventos]])}</div>
       <div class="card"><div class="cab"><h2>La semana por área</h2></div>
