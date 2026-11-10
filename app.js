@@ -245,6 +245,19 @@ function render() {
   `;
   window.scrollTo(0, scroll);
   pintarReloj();
+  pintarFavicon(A.pctHoy);
+}
+
+// Favicon: el anillo exterior se completa según el avance del día.
+function pintarFavicon(p) {
+  const f = Math.max(0, Math.min(1, p || 0));
+  const C = 2 * Math.PI * 28;
+  const arco = f > 0 ? `<circle cx='32' cy='32' r='28' fill='none' stroke='#5b8f7b' stroke-width='7' stroke-dasharray='${(C * f).toFixed(1)} ${C.toFixed(1)}' stroke-linecap='${f >= 1 ? 'butt' : 'round'}' transform='rotate(-90 32 32)'/>` : '';
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><circle cx='32' cy='32' r='28' fill='none' stroke='#5b8f7b' stroke-opacity='.25' stroke-width='7'/>${arco}<circle cx='32' cy='32' r='9' fill='#5b8f7b'/></svg>`;
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) { link = document.createElement('link'); link.rel = 'icon'; document.head.append(link); }
+  const href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+  if (link.getAttribute('href') !== href) link.setAttribute('href', href);
 }
 
 function renderTop(A) {
