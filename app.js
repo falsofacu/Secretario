@@ -1102,12 +1102,12 @@ async function regenerar() {
   S.regenerando = Date.now();
   const antes = S.briefing?.generado;
   render();
-  toast('Pedido. Tu PC lo genera en unos minutos (si está prendida).');
+  toast('Pedido enviado. Se genera en la nube en unos minutos.');
   clearInterval(tRegen);
   tRegen = setInterval(async () => {
     await cargar();
     if (S.briefing?.generado !== antes) { clearInterval(tRegen); S.regenerando = null; render(); toast('Resumen nuevo listo'); }
-    else if (Date.now() - S.regenerando > 20 * 60000) { clearInterval(tRegen); S.regenerando = null; render(); toast('No llegó el resumen: ¿la PC está prendida?'); }
+    else if (Date.now() - S.regenerando > 20 * 60000) { clearInterval(tRegen); S.regenerando = null; render(); toast('No llegó el resumen. Probá de nuevo en un rato.'); }
   }, 30000);
 }
 
